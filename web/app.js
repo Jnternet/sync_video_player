@@ -12,7 +12,7 @@
 const $ = (id) => document.getElementById(id);
 const video = $('video');
 // 界面版本标记：加 ?debug=1 会显示出来，用来确认浏览器里跑的到底是哪一版前端
-const UI_REV = 'r7-2026-09-12';
+const UI_REV = 'r8-2026-09-12';
 
 const fmtTime = (ms) => {
   if (!isFinite(ms) || ms < 0) ms = 0;
@@ -77,7 +77,8 @@ const S = {
   autoTrim: false,
   scrubbing: false,
   ctlIdleTimer: 0,
-  barMode: localStorage.getItem('sync_video_player.bar_mode') === 'dock' ? 'dock' : 'float',
+  // slide = 贴着画面下方滑出（默认，任何环境都画得出来）；float = 叠在画面上（bilibili 那种）
+  barMode: localStorage.getItem('sync_video_player.bar_mode') === 'float' ? 'float' : 'slide',
   debugBox: null,
   hashing: false,
   hashCancel: false,
@@ -663,7 +664,6 @@ function pokeControls() {
 function hideControls() {
   const stage = stageEl();
   if (!stage) return;
-  if (S.barMode === 'dock') return;   // 兜底模式：控制条常显在画面下方，不淡出
   // 暂停时一直留着：这时候本来就要能点播放、拖进度
   if (video.paused) return;
   // 正在拖进度条就别淡出，松开手再数 2.6 秒
@@ -685,24 +685,25 @@ function updateBarState() {
   const pill = $('barStatePill');
   const stage = stageEl();
   if (!pill || !stage) return;
-  const docked = S.barMode === 'dock';
-  const text = docked ? '控制条 停靠常显' : (stage.classList.contains('ctl-idle') ? '控制条 已隐藏' : '控制条 显示中');
+  const hidden = stage.classList.contains('ctl-idle');
+  const text = hidden
+    ? (S.barMode === 'float' ? '控制条 已隐藏' : '控制条 已收起')
+    : '控制条 显示中';
   if (pill.textContent !== text) pill.textContent = text;
-  pill.dataset.state = docked || !stage.classList.contains('ctl-idle') ? 'on' : 'off';
+  pill.dataset.state = hidden ? 'off' : 'on';
 }
 
-// 控制条显示方式：float = 浮在画面上（默认）；dock = 停在画面下方常显（浮层画不出来时的兜底）
+// 控制条显示方式：slide = 贴着画面下方滑出（默认）；float = 叠在画面底部（bilibili 那种）
 function applyBarMode() {
   const stage = stageEl();
-  if (stage) stage.classList.toggle('ctl-docked', S.barMode === 'dock');
+  if (stage) stage.classList.toggle('ctl-float', S.barMode === 'float');
   const btn = $('barModeBtn');
   if (btn) {
-    btn.textContent = S.barMode === 'dock' ? '控制条：停靠' : '控制条：浮层';
-    btn.title = S.barMode === 'dock'
-      ? '当前：控制条停在画面下方、一直可见；点一下改回浮层'
-      : '当前：控制条浮在画面上，鼠标晃动浮现、静止淡出；点一下改成停靠常显';
+    btn.textContent = S.barMode === 'float' ? '控制条：浮层' : '控制条：滑出';
+    btn.title = S.barMode === 'float'
+      ? '当前：控制条叠在画面底部（bilibili 那种）；如果看不到它，点一下换回「滑出」'
+      : '当前：控制条从画面下方滑出，不叠在画面上（最保险）；点一下改成浮层';
   }
-  if (S.barMode === 'dock') holdControls();   // 兜底模式下别留下淡出状态
   updateBarState();
 }
 
@@ -800,7 +801,7 @@ function bind() {
 
   // 控制条显示方式：浮层 <-> 停靠常显（后者是浮层画不出来时的兜底），选择记在 localStorage
   $('barModeBtn').addEventListener('click', () => {
-    S.barMode = S.barMode === 'dock' ? 'float' : 'dock';
+    S.barMode = S.barMode === 'float' ? 'slide' : 'float';
     try { localStorage.setItem('sync_video_player.bar_mode', S.barMode); } catch (_) {}
     applyBarMode();
     pokeControls();
@@ -808,6 +809,7 @@ function bind() {
   $('diagBtn').addEventListener('click', () => {
     if (S.debugBox) S.debugBox.hidden = !S.debugBox.hidden;
   });
+  applyBarMode();   // 启动时就把按钮文案/模式类摆正
   $('gestureBtn').addEventListener('click', async () => {
     await playLocal();
     const st = S.state;

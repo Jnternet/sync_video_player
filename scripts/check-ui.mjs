@@ -89,29 +89,30 @@ if (!stageSelFn.includes("querySelector('.stage')") || !/stageEl\(\)/.test(toggl
   bad++;
 }
 
-// CSS：控制条浮在画面上（绝对定位、不吃画面高度）
+// CSS：默认必须是「文档流里、收起时不占高度」的滑出式控制条。
+// 浮层（绝对定位叠在画面上）在有些显卡/浏览器上会被画到视频层下面（点得到、看不见），
+// 所以它只能是可选模式，不能当默认。
 const stackRule = (cssCode.match(/(?:^|\n)\s*\.ctl-stack\s*\{[\s\S]{0,500}?\}/) || [''])[0];
-if (!/position:\s*absolute/.test(stackRule) || !/bottom:\s*0/.test(stackRule)) {
-  console.log('[FAIL] app.css 里 .ctl-stack 不是浮在画面底部的绝对定位（会挤占画面）');
+if (!/position:\s*relative/.test(stackRule) || !/max-height:\s*0/.test(stackRule) || !/overflow:\s*hidden/.test(stackRule)) {
+  console.log('[FAIL] app.css 里 .ctl-stack 默认不是「在文档流里、收起时高度为 0」的滑出式（默认不能叠在画面上）');
   bad++;
 }
-// 视频会自成一个合成层；浮层不提层就会被画在视频下面。这条是「点得到看不见」的防线。
-if (!/transform:\s*translateZ\(0\)/.test(stackRule)) {
-  console.log('[FAIL] app.css 里 .ctl-stack 没有 transform: translateZ(0)：浮层可能被画到视频层下面（点得到、看不见）');
+if (!/\.stage:not\(\.ctl-idle\) \.ctl-stack\s*\{[\s\S]{0,300}?max-height:\s*[1-9]/.test(cssCode)) {
+  console.log('[FAIL] app.css 缺少「有活动时把控制条展开」的规则（.stage:not(.ctl-idle) .ctl-stack）');
+  bad++;
+}
+// 浮层模式：视频会自成合成层，浮层必须提层，而且这条只能是显式切过去的可选模式
+const floatRule = (cssCode.match(/\.stage\.ctl-float \.ctl-stack\s*\{[\s\S]{0,400}?\}/) || [''])[0];
+if (!/position:\s*absolute/.test(floatRule) || !/transform:\s*translateZ\(0\)/.test(floatRule)) {
+  console.log('[FAIL] app.css 里浮层模式（.stage.ctl-float .ctl-stack）必须是绝对定位 + translateZ(0)');
   bad++;
 }
 if (!/\.stage\.ctl-blocked \.ctl-stack/.test(cssCode)) {
   console.log('[FAIL] app.css 缺少 .stage.ctl-blocked .ctl-stack：选文件时会有一层控制条压在选择界面上');
   bad++;
 }
-// 兜底：浮层在某些显卡/浏览器上就是画不出来，必须留着「停靠常显」这条退路
-const dockRule = (cssCode.match(/\.stage\.ctl-docked \.ctl-stack\s*\{[\s\S]{0,300}?\}/) || [''])[0];
-if (!/position:\s*static/.test(dockRule)) {
-  console.log('[FAIL] app.css 缺少 .stage.ctl-docked .ctl-stack 的停靠样式：浮层画不出来时没有退路');
-  bad++;
-}
-if (!/S\.barMode === 'dock'\) return/.test(js)) {
-  console.log('[FAIL] app.js 的 hideControls() 没有在停靠模式下直接返回：停靠时也会被淡出');
+if (!/ctl-float/.test(js) || !/barModeBtn/.test(js)) {
+  console.log('[FAIL] app.js 没有「滑出 / 浮层」模式切换：浮层在某些环境画不出来时用户没得选');
   bad++;
 }
 
@@ -138,10 +139,10 @@ if (!/classList\.toggle\('is-fs'/.test(js)) {
   bad++;
 }
 
-// 淡出：静止后整块透明且不拦点击；这里少一条，控制条就会一直挂在画面上
-const idleRule = (cssCode.match(/\.stage\.ctl-idle \.ctl-stack[\s\S]{0,300}?\}/) || [''])[0];
+// 浮层模式收敛：静止后整块透明且不拦点击；这里少一条，浮层就会一直挂在画面上
+const idleRule = (cssCode.match(/\.stage\.ctl-float\.ctl-idle \.ctl-stack[\s\S]{0,300}?\}/) || [''])[0];
 if (!/opacity:\s*0/.test(idleRule) || !/pointer-events:\s*none/.test(idleRule)) {
-  console.log('[FAIL] app.css 缺少 .ctl-idle 的淡出规则（opacity:0 + pointer-events:none）');
+  console.log('[FAIL] app.css 缺少浮层模式的隐藏规则（.stage.ctl-float.ctl-idle .ctl-stack 需要 opacity:0 + pointer-events:none）');
   bad++;
 }
 

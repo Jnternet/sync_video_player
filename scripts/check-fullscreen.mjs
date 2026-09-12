@@ -181,7 +181,7 @@ check(getEl('barStatePill').textContent.includes('显示中'), '顶栏状态胶�
 
 advance(CTRL_IDLE_MS + 50);
 check(idle(), '晃完不再动又淡出');
-check(getEl('barStatePill').textContent.includes('已隐藏'), '顶栏状态胶囊显示「控制条 已隐藏」');
+check(getEl('barStatePill').textContent.includes('已收起'), '顶栏状态胶囊显示「控制条 已收起」');
 
 fireWin('touchstart', {});
 check(!idle(), '触屏点一下也能唤醒控制条');
@@ -227,17 +227,21 @@ check(idle(), '窗口模式下不动鼠标同样会淡出（控制条一直不�
 pointerIn();
 check(!idle(), '窗口模式下鼠标在画面上晃动也能唤出控制条');
 
-// 兜底模式：浮层在某些显卡/浏览器上就是画不出来，得能一键切到「停靠在画面下方常显」
+// 默认「滑出」模式 + 可切「浮层」模式：浮层在某些显卡/浏览器上就是画不出来，
+// 默认必须是那条一定能看见的路径，浮层只能一键切过去。
 const barModeBtn = getEl('barModeBtn');
-barModeBtn.fire('click');
-check(stage.classes.has('ctl-docked'), '点顶栏「控制条」能切到停靠模式（给浮层画不出来的环境兜底）');
-check(barModeBtn.textContent.includes('停靠'), '按钮文案显示当前是「停靠」');
+check(!stage.classes.has('ctl-float'), '默认是「滑出」模式：控制条在文档流里、不叠在画面上');
+check(barModeBtn.textContent.includes('滑出'), '按钮文案显示当前是「滑出」');
 advance(CTRL_IDLE_MS + 50);
-check(!idle(), '停靠模式下控制条一直可见，不会淡出');
+check(idle(), '滑出模式下静止后控制条收起（收起时高度为 0，不占画面位置）');
+check(getEl('barStatePill').textContent.includes('已收起'), '状态胶囊显示「控制条 已收起」');
 barModeBtn.fire('click');
-check(!stage.classes.has('ctl-docked'), '再点一下切回浮层模式');
+check(stage.classes.has('ctl-float'), '点顶栏「控制条」可切到浮层模式（bilibili 那种叠在画面上）');
+check(barModeBtn.textContent.includes('浮层'), '按钮文案显示当前是「浮层」');
+barModeBtn.fire('click');
+check(!stage.classes.has('ctl-float'), '再点一下切回滑出模式');
 advance(CTRL_IDLE_MS + 50);
-check(idle(), '切回浮层后照常淡出');
+check(idle(), '切回滑出后照常收起');
 
 // 诊断面板：不用改 URL 就能开
 check(els.has('diagBtn'), '顶栏有「诊断」按钮（点开看控制条状态，定位问题用）');

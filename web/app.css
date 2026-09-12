@@ -224,50 +224,54 @@ aside { display: flex; flex-direction: column; gap: 12px; }
 .notes li { margin-bottom: 5px; }
 .notes b { color: var(--text); }
 
-/* ---- 播放器控制条：浮在画面上，不占画面位置，静止后自动淡出 ---- */
-/* 控制条是 .video-wrap 的兄弟节点（在 .stage 里），贴着整个舞台的底部：
-   窗口模式下舞台高度就是画面高度，全屏时舞台铺满屏幕。
-   .ctl-idle 由 app.js 按鼠标活动增删。 */
+/* ---- 播放器控制条 ---- */
+/* 默认「滑出」：控制条在文档流里、贴在画面下方，收起时高度为 0（一点位置都不占），
+   鼠标一动再从底下滑出来。它永远不叠在画面上，所以无论显卡/浏览器怎么合成都能画出来
+   —— 浮层方案在有些环境会被画到视频层下面（点得到、看不见），这条默认路径不会有那个问题。
+   「浮层」模式（.ctl-float，叠在画面上，bilibili 那种）仍然可以一键切过去。 */
 .stage { position: relative; }
 .ctl-stack {
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 0;
+  position: relative;
   z-index: 3;
-  padding: 30px 16px 12px;
-  padding-bottom: calc(12px + env(safe-area-inset-bottom, 0px));
+  max-height: 0;          /* 收起：不占高度（box-sizing: border-box，padding 也算在里面） */
+  padding: 0 16px;
+  opacity: 0;
+  overflow: hidden;
   background: linear-gradient(180deg, rgba(6, 8, 12, 0) 0%, rgba(6, 8, 12, .72) 45%, rgba(6, 8, 12, .93) 100%);
   border-radius: 0 0 12px 12px;   /* 跟画面的圆角对齐 */
+  transition: max-height .2s ease, opacity .2s ease, padding .2s ease;
+}
+.stage:not(.ctl-idle) .ctl-stack {
+  max-height: 340px;      /* 展开：内容多到换行也放得下 */
+  padding: 26px 16px 12px;
+  padding-bottom: calc(12px + env(safe-area-inset-bottom, 0px));
   opacity: 1;
-  transition: opacity .28s ease;
-  /* 视频在多数浏览器里会单独提成一个合成层（Linux 上甚至走硬件叠加层）。
-     浮层不提层时，某些浏览器会把它画到视频下面 —— 表现就是「点得到、看不见」。
-     强制独立图层，宁可多一层也不要再出现这种问题。 */
-  transform: translateZ(0);
-  -webkit-transform: translateZ(0);
-  backface-visibility: hidden;
 }
-.stage.ctl-idle .ctl-stack {
-  opacity: 0;
-  pointer-events: none;   /* 淡出后点到的是画面（点一下就播放/暂停） */
-}
-.stage.ctl-idle { cursor: none; }
+.stage.ctl-idle { cursor: none; }   /* 收起时连指针一起藏起来，看过瘾一点 */
 .ctl-stack .controls { margin: 0; }
 .ctl-stack .local-bar { margin: 6px 0 0; }
 /* 还没选文件时遮罩铺满画面，别让控制条压在选择文件的界面上（类由 renderGate 维护） */
 .stage.ctl-blocked .ctl-stack { display: none; }
-/* 兜底模式：有些显卡/浏览器就是不肯把浮层画在视频上面（或画不出来），
-   这时把控制条停靠在画面下方常显——丑一点，但一定能看见、一定能点。 */
-.stage.ctl-docked .ctl-stack {
-  position: static;
-  transform: none;
-  -webkit-transform: none;
+
+/* 浮层模式：控制条叠在画面底部（bilibili 那种效果）。
+   浏览器有可能把它画到视频合成层下面（点得到、看不见），所以只作为可选模式。 */
+.stage.ctl-float .ctl-stack {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  max-height: none;
+  padding: 30px 16px 12px;
+  padding-bottom: calc(12px + env(safe-area-inset-bottom, 0px));
   opacity: 1;
-  pointer-events: auto;
+  transform: translateZ(0);
+  -webkit-transform: translateZ(0);
+  backface-visibility: hidden;
 }
-.stage.ctl-docked.ctl-idle { cursor: auto; }
-.stage.ctl-docked.ctl-idle .ctl-stack { opacity: 1; pointer-events: auto; }
+.stage.ctl-float.ctl-idle .ctl-stack {
+  opacity: 0;
+  pointer-events: none;   /* 淡出后点到的是画面（点一下就播放/暂停） */
+}
 
 /* ---- 全屏 ---- */
 /* 全屏布局由 app.js 在 fullscreenchange 时加的 .is-fs 类驱动，不用 :fullscreen 伪类：

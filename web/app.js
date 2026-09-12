@@ -12,7 +12,7 @@
 const $ = (id) => document.getElementById(id);
 const video = $('video');
 // 界面版本标记：加 ?debug=1 会显示出来，用来确认浏览器里跑的到底是哪一版前端
-const UI_REV = 'r5-2026-09-12';
+const UI_REV = 'r6-2026-09-12';
 
 const fmtTime = (ms) => {
   if (!isFinite(ms) || ms < 0) ms = 0;
@@ -77,6 +77,8 @@ const S = {
   autoTrim: false,
   scrubbing: false,
   ctlIdleTimer: 0,
+  barMode: localStorage.getItem('sync_video_player.bar_mode') === 'dock' ? 'dock' : 'float',
+  debugBox: null,
   hashing: false,
   hashCancel: false,
   wasm: null,
@@ -627,6 +629,7 @@ function render() {
   renderGate();
   renderPlayerInfo();
   renderFullscreenBtn();
+  applyBarMode();
 }
 
 /* ------------------------------------------- 控制条的浮现 / 淡出 / 全屏 */
@@ -659,6 +662,7 @@ function pokeControls() {
 function hideControls() {
   const stage = stageEl();
   if (!stage) return;
+  if (S.barMode === 'dock') return;   // 兜底模式：控制条常显在画面下方，不淡出
   // 暂停时一直留着：这时候本来就要能点播放、拖进度
   if (video.paused) return;
   // 正在拖进度条就别淡出，松开手再数 2.6 秒
@@ -677,6 +681,20 @@ function pointerInPlayer(ev) {
 
 function onPointerActivity(ev) {
   if (pointerInPlayer(ev)) pokeControls();
+}
+
+// 控制条显示方式：float = 浮在画面上（默认）；dock = 停在画面下方常显（浮层画不出来时的兜底）
+function applyBarMode() {
+  const stage = stageEl();
+  if (stage) stage.classList.toggle('ctl-docked', S.barMode === 'dock');
+  const btn = $('barModeBtn');
+  if (btn) {
+    btn.textContent = S.barMode === 'dock' ? '控制条：停靠' : '控制条：浮层';
+    btn.title = S.barMode === 'dock'
+      ? '当前：控制条停在画面下方、一直可见；点一下改回浮层'
+      : '当前：控制条浮在画面上，鼠标晃动浮现、静止淡出；点一下改成停靠常显';
+  }
+  if (S.barMode === 'dock') holdControls();   // 兜底模式下别留下淡出状态
 }
 
 function toggleFullscreen() {
@@ -770,6 +788,17 @@ function bind() {
   }
   document.addEventListener('keydown', pokeControls, { passive: true });
   video.addEventListener('play', pokeControls);   // 暂停时留着控制条，恢复播放后重新计时
+
+  // 控制条显示方式：浮层 <-> 停靠常显（后者是浮层画不出来时的兜底），选择记在 localStorage
+  $('barModeBtn').addEventListener('click', () => {
+    S.barMode = S.barMode === 'dock' ? 'float' : 'dock';
+    try { localStorage.setItem('sync_video_player.bar_mode', S.barMode); } catch (_) {}
+    applyBarMode();
+    pokeControls();
+  });
+  $('diagBtn').addEventListener('click', () => {
+    if (S.debugBox) S.debugBox.hidden = !S.debugBox.hidden;
+  });
   $('gestureBtn').addEventListener('click', async () => {
     await playLocal();
     const st = S.state;
@@ -839,21 +868,23 @@ function bind() {
 
 /* ------------------------------------------------------------ 调试面板 */
 
-// 加 ?debug=1 打开：右下角实时显示「控制条为什么看不见」需要的那几个量。
-// 只在带参数时出现，正常使用完全不受影响。
+// 右下角的诊断面板：显示「控制条为什么看不见」需要的那几个量。
+// 默认隐藏，点顶栏「诊断」或加 ?debug=1 打开。
 function initDebugPanel() {
-  if (params.get('debug') !== '1') return;
   const box = document.createElement('pre');
   box.id = 'debugBox';
   box.style.cssText = 'position:fixed;right:8px;bottom:8px;z-index:99;max-width:52ch;margin:0;' +
     'padding:8px 10px;background:rgba(6,8,12,.88);color:#9fe1ff;border:1px solid #2b3a4a;' +
     'border-radius:8px;font:11px/1.5 ui-monospace,Menlo,monospace;white-space:pre-wrap;pointer-events:none';
+  box.hidden = params.get('debug') !== '1';
   document.body.appendChild(box);
+  S.debugBox = box;
 
   let pointerEvents = 0;
   window.addEventListener('pointermove', () => { pointerEvents++; }, { capture: true, passive: true });
 
   setInterval(() => {
+    if (box.hidden) return;
     const stage = stageEl();
     const stack = document.querySelector('.ctl-stack');
     const wrap = document.querySelector('.video-wrap');
@@ -864,6 +895,7 @@ function initDebugPanel() {
     const rect = (r) => (r ? Math.round(r.top) + '~' + Math.round(r.bottom) : '—');
     box.textContent = [
       'UI ' + UI_REV + '　（这一行告诉你浏览器跑的是哪一版界面）',
+      '控制条模式 ' + S.barMode + '　（浮层画不出来时点顶栏「控制条」切到停靠）',
       '指针事件 ' + pointerEvents + ' 次　视口 ' + window.innerWidth + '×' + window.innerHeight,
       '全屏元素 ' + (fs ? (fs.className || fs.tagName) : '（无）'),
       'stage class = "' + (stage ? stage.className : '?') + '"',

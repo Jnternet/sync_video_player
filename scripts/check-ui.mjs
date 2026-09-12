@@ -104,6 +104,16 @@ if (!/\.stage\.ctl-blocked \.ctl-stack/.test(cssCode)) {
   console.log('[FAIL] app.css 缺少 .stage.ctl-blocked .ctl-stack：选文件时会有一层控制条压在选择界面上');
   bad++;
 }
+// 兜底：浮层在某些显卡/浏览器上就是画不出来，必须留着「停靠常显」这条退路
+const dockRule = (cssCode.match(/\.stage\.ctl-docked \.ctl-stack\s*\{[\s\S]{0,300}?\}/) || [''])[0];
+if (!/position:\s*static/.test(dockRule)) {
+  console.log('[FAIL] app.css 缺少 .stage.ctl-docked .ctl-stack 的停靠样式：浮层画不出来时没有退路');
+  bad++;
+}
+if (!/S\.barMode === 'dock'\) return/.test(js)) {
+  console.log('[FAIL] app.js 的 hideControls() 没有在停靠模式下直接返回：停靠时也会被淡出');
+  bad++;
+}
 
 // 这一条是踩过的坑：Firefox 不认 :-webkit-full-screen，而选择器列表里只要有一个
 // 不认识的伪类，整条规则（连 :fullscreen 那半截）会被整体丢弃 —— 全屏后什么都弹不出来。

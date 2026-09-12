@@ -225,5 +225,20 @@ check(idle(), '窗口模式下不动鼠标同样会淡出（控制条一直不�
 pointerIn();
 check(!idle(), '窗口模式下鼠标在画面上晃动也能唤出控制条');
 
+// 兜底模式：浮层在某些显卡/浏览器上就是画不出来，得能一键切到「停靠在画面下方常显」
+const barModeBtn = getEl('barModeBtn');
+barModeBtn.fire('click');
+check(stage.classes.has('ctl-docked'), '点顶栏「控制条」能切到停靠模式（给浮层画不出来的环境兜底）');
+check(barModeBtn.textContent.includes('停靠'), '按钮文案显示当前是「停靠」');
+advance(CTRL_IDLE_MS + 50);
+check(!idle(), '停靠模式下控制条一直可见，不会淡出');
+barModeBtn.fire('click');
+check(!stage.classes.has('ctl-docked'), '再点一下切回浮层模式');
+advance(CTRL_IDLE_MS + 50);
+check(idle(), '切回浮层后照常淡出');
+
+// 诊断面板：不用改 URL 就能开
+check(els.has('diagBtn'), '顶栏有「诊断」按钮（点开看控制条状态，定位问题用）');
+
 console.log(`\n通过 ${pass} 项，失败 ${fail} 项`);
 process.exit(fail === 0 ? 0 : 1);

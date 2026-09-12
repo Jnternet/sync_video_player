@@ -255,6 +255,17 @@ aside { display: flex; flex-direction: column; gap: 12px; }
 .ctl-stack .local-bar { margin: 6px 0 0; }
 /* 还没选文件时遮罩铺满画面，别让控制条压在选择文件的界面上（类由 renderGate 维护） */
 .stage.ctl-blocked .ctl-stack { display: none; }
+/* 兜底模式：有些显卡/浏览器就是不肯把浮层画在视频上面（或画不出来），
+   这时把控制条停靠在画面下方常显——丑一点，但一定能看见、一定能点。 */
+.stage.ctl-docked .ctl-stack {
+  position: static;
+  transform: none;
+  -webkit-transform: none;
+  opacity: 1;
+  pointer-events: auto;
+}
+.stage.ctl-docked.ctl-idle { cursor: auto; }
+.stage.ctl-docked.ctl-idle .ctl-stack { opacity: 1; pointer-events: auto; }
 
 /* ---- 全屏 ---- */
 /* 全屏布局由 app.js 在 fullscreenchange 时加的 .is-fs 类驱动，不用 :fullscreen 伪类：

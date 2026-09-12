@@ -12,7 +12,7 @@
 const $ = (id) => document.getElementById(id);
 const video = $('video');
 // 界面版本标记：加 ?debug=1 会显示出来，用来确认浏览器里跑的到底是哪一版前端
-const UI_REV = 'r6-2026-09-12';
+const UI_REV = 'r7-2026-09-12';
 
 const fmtTime = (ms) => {
   if (!isFinite(ms) || ms < 0) ms = 0;
@@ -651,6 +651,7 @@ function holdControls() {
   clearTimeout(S.ctlIdleTimer);
   const stage = stageEl();
   if (stage) stage.classList.remove('ctl-idle');
+  updateBarState();
 }
 
 // 有动静（移动鼠标 / 触摸 / 按键）就浮现控制条，然后重新开始倒计时
@@ -668,19 +669,26 @@ function hideControls() {
   // 正在拖进度条就别淡出，松开手再数 2.6 秒
   if (S.scrubbing) { S.ctlIdleTimer = setTimeout(hideControls, 500); return; }
   stage.classList.add('ctl-idle');
+  updateBarState();
 }
 
-// 指针在不在画面上：只看坐标，不看事件目标 —— 视频经常自成一个合成层，
-// 事件目标是它还是它下面的元素都不该影响「晃动鼠标就浮出控制条」。
-function pointerInPlayer(ev) {
-  const wrap = document.querySelector('.video-wrap');
-  if (!wrap || typeof ev.clientX !== 'number' || typeof ev.clientY !== 'number') return true;
-  const r = wrap.getBoundingClientRect();
-  return ev.clientX >= r.left && ev.clientX <= r.right && ev.clientY >= r.top && ev.clientY <= r.bottom;
+// 只要有指针动静就浮现：不判断坐标、不看事件目标。
+// （视频会自成合成层，事件目标不可靠；漏判一次的表现就是「鼠标晃了但控制条不出现」，
+//   宁可鼠标在侧栏上晃也把控制条亮出来，也不能漏。）
+function onPointerActivity() {
+  pokeControls();
 }
 
-function onPointerActivity(ev) {
-  if (pointerInPlayer(ev)) pokeControls();
+// 顶栏那枚状态胶囊：随时告诉用户控制条现在到底是显示还是藏着，
+// 不用打开诊断面板也能一眼看出问题出在「没浮现」还是「画不出来」。
+function updateBarState() {
+  const pill = $('barStatePill');
+  const stage = stageEl();
+  if (!pill || !stage) return;
+  const docked = S.barMode === 'dock';
+  const text = docked ? '控制条 停靠常显' : (stage.classList.contains('ctl-idle') ? '控制条 已隐藏' : '控制条 显示中');
+  if (pill.textContent !== text) pill.textContent = text;
+  pill.dataset.state = docked || !stage.classList.contains('ctl-idle') ? 'on' : 'off';
 }
 
 // 控制条显示方式：float = 浮在画面上（默认）；dock = 停在画面下方常显（浮层画不出来时的兜底）
@@ -695,6 +703,7 @@ function applyBarMode() {
       : '当前：控制条浮在画面上，鼠标晃动浮现、静止淡出；点一下改成停靠常显';
   }
   if (S.barMode === 'dock') holdControls();   // 兜底模式下别留下淡出状态
+  updateBarState();
 }
 
 function toggleFullscreen() {
@@ -893,6 +902,13 @@ function initDebugPanel() {
     const sr = stack ? stack.getBoundingClientRect() : null;
     const fs = fullscreenElement();
     const rect = (r) => (r ? Math.round(r.top) + '~' + Math.round(r.bottom) : '—');
+    // 命中测试：控制条中心点最上层是哪个元素。它是 video 就说明浮层被压在下面了。
+    let hit = '—';
+    if (sr && sr.width > 0 && typeof document.elementFromPoint === 'function') {
+      const el = document.elementFromPoint(Math.round((sr.left + sr.right) / 2), Math.round((sr.top + sr.bottom) / 2));
+      hit = !el ? '（无）' : el.id ? '#' + el.id
+        : el.tagName.toLowerCase() + (el.className ? '.' + String(el.className).split(' ')[0] : '');
+    }
     box.textContent = [
       'UI ' + UI_REV + '　（这一行告诉你浏览器跑的是哪一版界面）',
       '控制条模式 ' + S.barMode + '　（浮层画不出来时点顶栏「控制条」切到停靠）',
@@ -902,6 +918,7 @@ function initDebugPanel() {
       '控制条 opacity=' + (cs ? cs.opacity : '—') + ' visibility=' + (cs ? cs.visibility : '—') +
         ' pointer-events=' + (cs ? cs.pointerEvents : '—'),
       '控制条 y ' + rect(sr) + '　画面 y ' + rect(wr) + '　（数值应落在画面里）',
+      '控制条中心命中 ' + hit + '　（是 video 就说明浮层被压在视频下面了）',
       'video paused=' + video.paused + ' readyState=' + video.readyState,
     ].join('\n');
   }, 500);
@@ -915,6 +932,7 @@ function boot() {
   syncClock().then(connectStream);
   setInterval(heartbeat, 3000);
   setInterval(tickLocal, 250);
+  setInterval(updateBarState, 1000);   // 兜底：状态胶囊始终反映实际状态
   setInterval(() => { syncClock(); }, 30000);
   fetch('/api/state?room=' + encodeURIComponent(S.room) + '&client=' + S.client + '&name=' + encodeURIComponent(S.name))
     .then((r) => r.json()).then(onState).catch(() => {});

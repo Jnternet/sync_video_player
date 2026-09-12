@@ -155,8 +155,17 @@ if (!/'pointermove'[\s\S]{0,200}?window\.addEventListener\(ev, onPointerActivity
   console.log('[FAIL] app.js 没有在 window 捕获阶段接住指针移动来唤醒控制条（视频层会让事件目标不可靠）');
   bad++;
 }
-if (!/function pointerInPlayer\(ev\)[\s\S]{0,400}?getBoundingClientRect\(\)/.test(js)) {
-  console.log('[FAIL] app.js 的 pointerInPlayer() 没有按画面矩形判断指针位置');
+// 浮现不能做任何条件判断：漏判一次就是「鼠标晃了但控制条不出现」，宁可多亮
+if (!/function onPointerActivity\(\)\s*\{\s*pokeControls\(\);/.test(js)) {
+  console.log('[FAIL] app.js 的 onPointerActivity() 带了条件：漏判时鼠标晃动不会浮现（必须无条件 pokeControls）');
+  bad++;
+}
+if (!/function updateBarState\(\)/.test(js)) {
+  console.log('[FAIL] app.js 缺少顶栏「控制条状态」胶囊的更新逻辑（出问题时没法一眼看出状态）');
+  bad++;
+}
+if (!/elementFromPoint/.test(js)) {
+  console.log('[FAIL] app.js 的诊断面板缺少命中测试（判断浮层是不是被压在视频下面要用它）');
   bad++;
 }
 if (!/function initDebugPanel\(\)/.test(js)) {

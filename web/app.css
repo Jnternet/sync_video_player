@@ -94,7 +94,9 @@ main {
   overflow: hidden;
   aspect-ratio: 16 / 9;
 }
-video { width: 100%; height: 100%; display: block; background: #000; }
+/* 给视频显式定一个层（z-index:0）：有些浏览器在视频自成合成层时，
+   会把后面的兄弟元素（控制条浮层）画到它下面，显式分层能少踩这个坑。 */
+video { position: relative; z-index: 0; width: 100%; height: 100%; display: block; background: #000; }
 
 .overlay {
   position: absolute;

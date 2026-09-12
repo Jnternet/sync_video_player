@@ -172,14 +172,16 @@ advance(CTRL_IDLE_MS + 50);
 check(idle(), `鼠标静止 ${CTRL_IDLE_MS}ms 后控制条淡出，不挡画面`);
 
 pointerIn();
-check(!idle(), '鼠标在画面上晃一下控制条就浮出来（按坐标判断，不依赖事件目标）');
+check(!idle(), '鼠标在画面上晃一下控制条就浮出来（无条件浮现，不依赖事件目标）');
 
 advance(CTRL_IDLE_MS + 50);
 pointerOut();
-check(idle(), '鼠标在画面外晃动不会唤醒控制条');
+check(!idle(), '鼠标在画面外晃动也会浮现（不做坐标判断，宁可多亮也不能漏）');
+check(getEl('barStatePill').textContent.includes('显示中'), '顶栏状态胶囊显示「控制条 显示中」');
 
 advance(CTRL_IDLE_MS + 50);
 check(idle(), '晃完不再动又淡出');
+check(getEl('barStatePill').textContent.includes('已隐藏'), '顶栏状态胶囊显示「控制条 已隐藏」');
 
 fireWin('touchstart', {});
 check(!idle(), '触屏点一下也能唤醒控制条');

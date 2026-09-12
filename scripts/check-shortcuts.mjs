@@ -3,7 +3,8 @@
 //   2) F 全屏 / 退出全屏（全屏的是 .stage）
 //   3) M 静音；W/S/↑/↓ 音量 ±10%，音量 ≤10% 时改成 ±2%，两者都只在本机（不发请求）
 //   4) A/D/←/→ 后退/前进 5 秒，并跟拖进度条一样把 seek 发给房间
-//   5) 按住 D/→：不到 0.2 秒算单击（+5 秒）；超过 0.2 秒进 2 倍速、松开回房间倍速，全程不发请求
+//   5) 按住 D/→：不到 0.2 秒算单击（+5 秒）；超过 0.2 秒进 2 倍速并把倍速发给房间，
+//      松开/失焦/关页面都要把原来的倍速还回去
 //   6) 输入框/滑块里不吃快捷键、复选框与按钮上照常生效；长按的自动重复不算新的一次按键
 // 时间用假定时器推进，不真的等 0.2 秒；跑的是交付给浏览器的那份文件。
 import { readFileSync } from 'node:fs';
@@ -125,6 +126,7 @@ const document = {
 
 // 记下每一个 POST：跳转必须发给房间（跟拖进度条一条路），音量与长按快进一个请求都不该发。
 const posts = [];
+const beacons = [];
 const sandbox = {
   document,
   window: {
@@ -147,7 +149,7 @@ const sandbox = {
   },
   EventSource: class { constructor() { this.readyState = 0; } close() {} },
   WebAssembly: {},
-  navigator: {},
+  navigator: { sendBeacon: (url, body) => { beacons.push({ url, body }); return true; } },
   console,
   performance,
   setTimeout: fakeSetTimeout,
@@ -159,20 +161,22 @@ const sandbox = {
 };
 sandbox.globalThis = sandbox;
 
-const exposed = src + '\n;globalThis.__api = { S, bind, CTRL_IDLE_MS };\n';
+const exposed = src + '\n;globalThis.__api = { S, bind, CTRL_IDLE_MS, onState };\n';
 vm.createContext(sandbox);
 vm.runInContext(exposed, sandbox);
-const { S, bind, CTRL_IDLE_MS } = sandbox.__api;
+const { S, bind, CTRL_IDLE_MS, onState } = sandbox.__api;
 
 bind();   // 真实页面里由 DOMContentLoaded 触发
 
 // 摆成「已经进房间、本机文件也对上了」：跳转和长按快进才有意义
 const file = { name: 'movie.mkv', size: 1024 };
 S.file = file;
+S.localHash = 'a'.repeat(64);
 S.state = { media: { hash: 'a'.repeat(64), size: 1024 }, rate: 1, playing: true };
 S.matches = true;
 
 const seeks = () => posts.filter((p) => p.body.op === 'seek');
+const rateOps = () => posts.filter((p) => p.body.op === 'rate');
 
 /* ------------------------------------------------------- 场景 */
 console.log('键盘快捷键检查：');
@@ -279,38 +283,73 @@ prevented = 0;
 keyDown('ArrowDown');
 check(prevented === 1, '处理掉的键调用 preventDefault（方向键不会去滚页面）');
 
-/* ---- 按住 D/→：2 倍速快进 ---- */
+/* ---- 按住 D/→：2 倍速快进（同样发给房间）---- */
 currentTime = 100;
 posts.length = 0;
 keyDown('d');
 advance(199);
 check(playbackRate === 1 && Math.abs(currentTime - 100) < 1e-6, '按住不到 0.2 秒时还是 1 倍速、也没跳走');
+check(posts.length === 0, '还没过 0.2 秒时什么都不发（先分清是单击还是长按）');
 advance(2);              // 累计 201ms，过线
 check(playbackRate === 2, '按住超过 0.2 秒进入 2 倍速');
 check(Math.abs(currentTime - 100) < 1e-6, '长按进 2 倍速时不额外跳 5 秒（跳转只属于单击）');
+check(rateOps().some((p) => p.body.value === 2), '进 2 倍速时把倍速发给房间（房间里所有人一起快进）');
 keyUp('d');
 check(playbackRate === 1, '松开 D 恢复 1 倍速');
-check(posts.length === 0, '长按快进只在本机：不跳转、不改房间倍速，一个请求都不发');
+check(rateOps().some((p) => p.body.value === 1), '松开时把原来的倍速还回房间（否则全场停在 2 倍速）');
+check(seeks().length === 0, '长按快进不发跳转（位置靠倍速自己往前走）');
 
-// 房间本来就在 1.5 倍速时，松手要回到房间倍速，而不是硬写 1 倍
+// 房间本来就在 1.5 倍速时，松手要还回 1.5 倍，而不是硬写 1 倍
 S.state.rate = 1.5;
+posts.length = 0;
 keyDown('ArrowRight');
 advance(250);
 check(playbackRate === 2, '房间 1.5 倍速时按住 → 一样进 2 倍速');
 keyUp('ArrowRight');
-check(playbackRate === 1.5, '松手回到房间倍速（房间是 1 倍速时就是 1 倍）');
+check(playbackRate === 1.5, '松手回到按住之前的倍速（房间 1 倍速时就是 1 倍）');
+check(rateOps().some((p) => p.body.value === 1.5), '还回去的是按住之前的那个倍速，不是写死的 1 倍');
 S.state.rate = 1;
 
-// 按住时切走窗口收不到 keyup，倍速不能留在 2 倍
+// 按住期间别人改了房间倍速：松手别把人家的选择覆盖掉
+posts.length = 0;
+keyDown('d');
+advance(250);
+onState({
+  media: { hash: 'a'.repeat(64), size: 1024 }, playing: true, rate: 0.5,
+  base_pos_ms: 100000, base_srv_ms: Date.now(),
+});
+keyUp('d');
+check(rateOps().some((p) => p.body.value === 0.5), '按住期间别人把倍速调成 0.5 时，松手还回去的是 0.5（不覆盖别人的选择）');
+S.state.rate = 1;            // 回到 1 倍速，后面几项都按 1 倍速算
+video.playbackRate = 1;
+
+// 按住时切走窗口收不到 keyup，倍速不能留在本机和房间里
+posts.length = 0;
 keyDown('d');
 advance(250);
 check(playbackRate === 2, '按住 D 期间是 2 倍速');
 fireWin('blur');
 check(playbackRate === 1, '按住时窗口失焦也能把 2 倍速收回来（不会一直 2 倍速跑下去）');
+check(rateOps().some((p) => p.body.value === 1), '失焦时也把倍速还回房间（不然全场卡在 2 倍速）');
 currentTime = 100;
 posts.length = 0;
 keyUp('d');
-check(Math.abs(currentTime - 100) < 1e-6 && posts.length === 0, '兜底取消之后再来的 keyup 不会再触发一次跳转');
+check(Math.abs(currentTime - 100) < 1e-6 && posts.length === 0, '兜底取消之后再来的 keyup 不会再发一次跳转/倍速');
+
+// 关页面时还按着快进：unload 阶段 fetch 会被掐掉，得用 sendBeacon 兜一次
+beacons.length = 0;
+keyDown('d');
+advance(250);
+fireWin('beforeunload');
+check(beacons.length === 1 && beacons[0].url === '/api/control' &&
+  JSON.parse(beacons[0].body).op === 'rate' && JSON.parse(beacons[0].body).value === 1,
+  '关页面时用 sendBeacon 兜底把房间倍速还回去（fetch 在这一步发不出去）');
+posts.length = 0;
+keyUp('d');
+check(posts.length === 0, '兜底之后即便再来 keyup 也不会重复发请求');
+beacons.length = 0;
+fireWin('beforeunload');
+check(beacons.length === 0, '没按着快进时关页面不会多发一次倍速');
 
 // 系统自动重复（按住不放的连续 keydown）不是新的一次按键
 video.volume = 0.5;

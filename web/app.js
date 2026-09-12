@@ -77,9 +77,11 @@ const S = {
   autoTrim: false,
   scrubbing: false,
   ctlIdleTimer: 0,
-  // 按住 D/→ 的本机快进：holdKey = 正按着哪个键，holdRate = 临时倍速（0 = 没按）
+  // 按住 D/→ 的快进：holdKey = 正按着哪个键，holdRate = 临时倍速（0 = 没按），
+  // holdBaseRate = 按住之前房间的倍速（松手要还回去的那个值）
   holdKey: null,
   holdRate: 0,
+  holdBaseRate: 1,
   holdTimer: 0,
   keysOpen: false,   // 快捷键提示面板是否打开
   // float = 叠在画面底部（默认：不占位置、画面不动，bilibili 那种）；
@@ -223,6 +225,8 @@ function applyControlState(st) {
 
   // 倍速属于控制信息，按新的控制信息设置（按住 D/→ 的临时倍速优先，松手才让位）
   v.playbackRate = S.holdRate || st.rate;
+  // 按住快进期间别人改了房间倍速：松手时按新的值还回去，别把别人的选择覆盖掉
+  if (S.holdRate && st.rate !== S.holdRate) S.holdBaseRate = st.rate;
   if (v.readyState < 1) { renderPlayerInfo(); return; }
 
   const target = targetPos(st);
@@ -823,38 +827,61 @@ function seekBy(ms) {
   op('seek', { value: Math.round(target) });
 }
 
-// 按住 D/→：先等 0.2 秒。不到就是单击 → 松手时前进 5 秒；超过 → 临时 2 倍速，松手恢复房间倍速。
+// 按住 D/→：先等 0.2 秒。不到就是单击（松手时前进 5 秒）；超过就进 2 倍速快进，
+// 松手恢复原来的倍速。快进属于控制信息，跟播放/暂停一样发给房间——房间里所有人一起快进。
 function startHoldScan(key) {
   if (S.holdKey || !canControlRoom()) return;
   S.holdKey = key;
-  S.holdTimer = setTimeout(() => {
-    S.holdTimer = 0;
-    S.holdRate = HOLD_SCAN_RATE;
-    applyLocalRate();
-  }, HOLD_SCAN_MS);
+  S.holdTimer = setTimeout(enterHoldScan, HOLD_SCAN_MS);
+}
+
+// 长按过线：本机先立刻 2 倍速（不等服务端回声），再把倍速发给房间
+function enterHoldScan() {
+  S.holdTimer = 0;
+  S.holdBaseRate = roomRate();     // 松手要还回去的那个值
+  S.holdRate = HOLD_SCAN_RATE;
+  applyLocalRate();
+  op('rate', { value: HOLD_SCAN_RATE });
+}
+
+// 结束长按（松手 / 失焦 / 关页面）：把临时倍速收回去。
+// 本机立刻恢复，房间那边也发一次——不然全场会一直停在 2 倍速。
+function stopHoldScan() {
+  clearTimeout(S.holdTimer);
+  S.holdTimer = 0;
+  S.holdKey = null;
+  if (!S.holdRate) return false;
+  S.holdRate = 0;
+  const rate = S.holdBaseRate || 1;
+  video.playbackRate = rate;
+  op('rate', { value: rate });
+  return true;
 }
 
 function endHoldScan(key) {
   if (S.holdKey !== key) return;   // 不是我们记下的那一次按键（比如在输入框里按的 D）
-  clearTimeout(S.holdTimer);
-  S.holdTimer = 0;
-  S.holdKey = null;
-  if (S.holdRate) {
-    S.holdRate = 0;                // 长按结束：回到房间倍速（房间没变速就是 1 倍）
-    applyLocalRate();
-  } else {
-    seekBy(SEEK_STEP_MS);          // 单击：前进 5 秒
+  if (!S.holdRate) {               // 没到 0.2 秒：算单击，前进 5 秒
+    clearTimeout(S.holdTimer);
+    S.holdTimer = 0;
+    S.holdKey = null;
+    seekBy(SEEK_STEP_MS);
+    return;
   }
+  stopHoldScan();                  // 长按结束：把倍速还回房间
 }
 
-// 按住时窗口失焦（切标签、Alt+Tab）收不到 keyup，这里兜底把临时倍速收回去
-function cancelHoldScan() {
-  if (!S.holdKey && !S.holdRate) return;
-  clearTimeout(S.holdTimer);
-  S.holdTimer = 0;
-  S.holdKey = null;
-  S.holdRate = 0;
-  applyLocalRate();
+// 页面要关了还按着快进：unload 阶段 fetch 会被浏览器掐掉，用 sendBeacon 再兜一次，
+// 否则房间里所有人得一直 2 倍速跑下去
+function onPageUnload() {
+  if (S.fileUrl) URL.revokeObjectURL(S.fileUrl);
+  if (!S.holdRate) return;
+  const rate = S.holdBaseRate || 1;
+  stopHoldScan();
+  if (navigator.sendBeacon) {
+    navigator.sendBeacon('/api/control', JSON.stringify({
+      room: S.room, client: S.client, name: S.name, op: 'rate', value: rate,
+    }));
+  }
 }
 
 // 认这几个键，返回规范化后的小写名字；其它键返回 null，原样交给浏览器
@@ -962,7 +989,8 @@ function bind() {
   // 快捷键统一在窗口捕获阶段处理（输入框/滑块里的按键由 typingTarget() 放行）
   window.addEventListener('keydown', onShortcutDown, { capture: true });
   window.addEventListener('keyup', onShortcutUp, { capture: true });
-  window.addEventListener('blur', cancelHoldScan);   // 切走窗口时兜底：别把 2 倍速留在那儿
+  // 按住时窗口失焦（切标签、Alt+Tab）收不到 keyup，兜底把倍速还回房间
+  window.addEventListener('blur', stopHoldScan);
   $('helpBtn').addEventListener('click', () => toggleKeysPanel());
   $('keysCloseBtn').addEventListener('click', () => toggleKeysPanel(false));
   $('keysOverlay').addEventListener('click', (e) => {
@@ -1043,7 +1071,7 @@ function bind() {
     if (st.playing) await op('pause'); else { await op('play'); await playLocal(); }
   });
 
-  window.addEventListener('beforeunload', () => { if (S.fileUrl) URL.revokeObjectURL(S.fileUrl); });
+  window.addEventListener('beforeunload', onPageUnload);
 }
 
 /* ---------------------------------------------------------------- 启动 */

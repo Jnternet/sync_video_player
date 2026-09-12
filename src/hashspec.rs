@@ -138,4 +138,46 @@ mod tests {
         changed[(size / 2) as usize] ^= 0xff;
         assert_ne!(digest(&data), digest(&changed));
     }
+
+    #[test]
+    fn mode_labels_round_trip() {
+        assert_eq!(Mode::parse("sample"), Mode::Sample);
+        assert_eq!(Mode::parse("fast"), Mode::Sample, "别名叫 fast");
+        assert_eq!(Mode::parse("full"), Mode::Full);
+        assert_eq!(Mode::parse("没见过的值"), Mode::Full, "认不出来就按整文件算");
+        assert_eq!(Mode::Full.as_str(), "full");
+        assert_eq!(Mode::Sample.as_str(), "sample");
+    }
+
+    #[test]
+    fn sample_threshold_boundary() {
+        // 正好等于阈值：抽样没有意义，退化成「整个文件一个样本」
+        let plan = sample_plan(SAMPLE_MIN_SIZE);
+        assert_eq!(plan.len(), 1);
+        assert_eq!((plan[0].offset, plan[0].len), (0, SAMPLE_MIN_SIZE));
+
+        // 刚超过阈值：铺开完整采样计划
+        let size = SAMPLE_MIN_SIZE + 1;
+        let plan = sample_plan(size);
+        assert_eq!(plan.len(), (SPOT_COUNT + 1) as usize);
+        for s in &plan {
+            assert!(s.offset + s.len <= size);
+        }
+    }
+
+    #[test]
+    fn sample_header_binds_size_and_plan() {
+        // 头部写入了文件长度与采样点表，所以长度不同摘要必然不同
+        let data = [7u8; 2048];
+        let digest = |size: u64| {
+            let plan = sample_plan(size);
+            let mut h = Sha256::new();
+            feed_sample_header(&mut h, size, &plan);
+            for s in &plan {
+                h.update(&data[s.offset as usize..(s.offset + s.len) as usize]);
+            }
+            hex(&h.finalize())
+        };
+        assert_ne!(digest(1024), digest(2048));
+    }
 }

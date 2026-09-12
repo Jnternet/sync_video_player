@@ -270,4 +270,20 @@ mod tests {
             "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
         );
     }
+
+    #[test]
+    fn sha256_hex_helper_matches_streaming() {
+        assert_eq!(sha256_hex(b"abc"), digest_hex(b"abc"));
+        assert_eq!(sha256_hex(b""), digest_hex(b""));
+    }
+
+    #[test]
+    fn validates_hex_hashes() {
+        assert!(is_valid_sha256_hex(&"a".repeat(64)));
+        assert!(is_valid_sha256_hex(&("ABC123".repeat(10) + "abcd")), "大小写都接受");
+        assert!(!is_valid_sha256_hex(&"a".repeat(63)), "太短");
+        assert!(!is_valid_sha256_hex(&"a".repeat(65)), "太长");
+        assert!(!is_valid_sha256_hex(&"g".repeat(64)), "不是十六进制");
+        assert!(!is_valid_sha256_hex(""));
+    }
 }

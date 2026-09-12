@@ -191,8 +191,12 @@ struct RoomState {
 | 抽样规范 | 采样计划排序/越界/读取量测试；抽样摘要稳定性与敏感性测试 |
 | 状态机 | 位置/倍速计算、哈希冲突拒绝、跳转钳制、缓冲等待、离线回收的单元测试 |
 | **wasm 与 CLI 一致性** | `scripts/check-wasm.mjs`：直接实例化 wasm，与 Node `crypto`、`sync_video_player hash`、`sync_video_player hash --sample` 三向比对 |
-| 端到端 | `scripts/smoke.sh`：真实起服务，41 项断言覆盖静态资源→wasm 提供→上传接口 404→体积闸门→房间→同步→SSE→重置 |
+| 集成 | `tests/e2e.rs`：真启动二进制，用标准库发 HTTP/SSE，覆盖内嵌资源→路由边界（413/404/400）→房间协议→SSE→CLI 哈希→路径哈希 |
+| 端到端冒烟 | `scripts/smoke.sh`：真实起服务，45 项断言覆盖静态资源→wasm 提供→上传接口 404→体积闸门→房间→同步→SSE→重置 |
 | 前端接线 | `scripts/check-ui.mjs`：校验 `app.js` 引用的 id/class 在 HTML 中存在，且 HTML id 不重复 |
+| 自动化 | `scripts/test.sh` 一键跑完上述全部；`.github/workflows/ci.yml` 与 `.githooks/pre-push` 在 push/PR 时自动执行（含 wasm 产物是否与源码一致的漂移检查） |
+
+测试分层、每层覆盖面与加测试的约定见 [TESTING.md](TESTING.md)。
 
 未能自动验证的部分：真实浏览器里 `<video>` 的解码与渲染行为（本环境的无头浏览器无法驱动文件选择、也无法播放视频）。
 wasm 的哈希正确性已用 Node 直接实例化验证（同一份字节码、同一套调用序列），UI 接线有静态检查兜底，

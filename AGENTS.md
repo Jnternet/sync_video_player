@@ -5,8 +5,11 @@
 这个项目**必须用 Git 管理代码，改动要小步提交、随时可回退**。别攒一大堆改动最后一把梭。
 
 - **每完成一个独立改动就提交一次**，不要等"全部做完"再提交。一次提交只做一件事。
-- **提交前先跑验证**：`cargo test` 必跑；改了前端或协议再加 `bash scripts/smoke.sh`。
+- **提交前先跑验证**：`bash scripts/test.sh --quick`（Rust 单元+集成、wasm 测试、前端检查）必跑；
+  改了前端、协议或 wasm 再加 `bash scripts/test.sh`（含 release 构建与冒烟测试）。
   测试没过就不要提交，更不要推送。
+- **测试会自动跑**：`.github/workflows/ci.yml`（push / PR）和已启用的 `.githooks/pre-push` 钩子
+  （急用时 `SKIP_TESTS=1 git push` 跳过）。分层、覆盖面与加测试的约定见 `docs/TESTING.md`。
 - **提交信息**用 `类型: 中文简述` 的格式，类型取 `feat` / `fix` / `docs` / `refactor` / `test` / `chore`。
   例如 `fix: 缓冲等待在 90 秒后不再无限期挂起`。
 - **别提交构建产物**：`target/`（含 `wasm/target/`）和 `vendor/` 已在 `.gitignore` 里。

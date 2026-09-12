@@ -1,0 +1,54 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 安装 Rust（含 wasm 目标）
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - name: 缓存依赖
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: ". -> target\nwasm -> wasm/target"
+
+      # 单元测试 + 端到端集成测试（tests/e2e.rs 会真的把服务拉起来）
+      - name: Rust 测试
+        run: cargo test
+
+      - name: wasm 哈希器测试
+        run: cargo test --manifest-path wasm/Cargo.toml
+
+      # 两条硬规则里的一条：哈希算法由主程序与 wasm 共用同一份源码，
+      # 所以仓库里的 wasm 产物必须和源码一致，否则说明忘了重新构建并提交。
+      - name: 校验 wasm 产物与源码一致
+        run: |
+          bash scripts/build-wasm.sh
+          if ! git diff --quiet -- web/sync_video_player_hash.wasm; then
+            echo "::error::web/sync_video_player_hash.wasm 与 wasm 源码不一致，请重跑 scripts/build-wasm.sh 并提交新产物"
+            exit 1
+          fi
+
+      - name: 前端接线与同步策略检查
+        run: |
+          node scripts/check-ui.mjs
+          node scripts/check-sync-policy.mjs
+
+      - name: 构建 release 产物
+        run: cargo build --release
+
+      - name: wasm 与 CLI 的哈希一致性
+        run: node scripts/check-wasm.mjs target/release/sync_video_player
+
+      - name: 端到端冒烟测试
+        run: bash scripts/smoke.sh

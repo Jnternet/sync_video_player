@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+# 推送前自动跑测试，别把没测过的代码推上去。
+#   急用时可以跳过：SKIP_TESTS=1 git push
+#   只想跑快的：QUICK_TESTS=1 git push
+#
+# 需要先启用一次：git config core.hooksPath .githooks
+set -uo pipefail
+
+if [ "${SKIP_TESTS:-0}" = "1" ]; then
+  echo "[pre-push] 已按 SKIP_TESTS=1 跳过测试"
+  exit 0
+fi
+
+ROOT="$(git rev-parse --show-toplevel)"
+ARGS=""
+[ "${QUICK_TESTS:-0}" = "1" ] && ARGS="--quick"
+
+echo "[pre-push] 开始跑测试（SKIP_TESTS=1 可跳过）"
+if bash "$ROOT/scripts/test.sh" $ARGS; then
+  echo "[pre-push] 测试通过，继续推送"
+else
+  echo "[pre-push] 测试没通过，已阻止推送（确要推送请用 SKIP_TESTS=1 git push）" >&2
+  exit 1
+fi

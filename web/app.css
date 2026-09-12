@@ -222,33 +222,10 @@ aside { display: flex; flex-direction: column; gap: 12px; }
 .notes li { margin-bottom: 5px; }
 .notes b { color: var(--text); }
 
-/* ---- 全屏：控制条浮在画面上，不占画面位置，静止一会儿就淡出 ---- */
-/* 以前只全屏 .video-wrap（只有画面），控制条留在全屏之外，全屏后什么都调不了；
-   现在整块 .stage 进全屏，画面铺满，控制条浮在底部、鼠标晃动时浮现、静止后淡出。 */
-.stage:fullscreen,
-.stage:-webkit-full-screen {
-  display: flex;
-  flex-direction: column;
-  position: fixed;   /* 浏览器本来就会把全屏元素钉在视口上，这里写明是为了控制条好定位 */
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  gap: 0;
-  padding: 0;
-  background: #000;
-  overflow: hidden;
-}
-.stage:fullscreen .video-wrap,
-.stage:-webkit-full-screen .video-wrap {
-  flex: 1 1 auto;
-  min-height: 0;
-  aspect-ratio: auto;
-  border: 0;
-  border-radius: 0;
-}
-/* 控制条整块脱离文档流叠在画面底部：不挤占画面高度，鼠标不停在它上面就淡出 */
-.stage:fullscreen .ctl-stack,
-.stage:-webkit-full-screen .ctl-stack {
+/* ---- 播放器控制条：浮在画面上，不占画面位置，静止后自动淡出 ---- */
+/* 控制条放在 .video-wrap 里面，所以它永远贴着画面底部（全屏时画面铺满屏幕，
+   它就贴在屏幕底部），并且被画面的圆角裁掉。.ctl-idle 由 app.js 按鼠标活动增删。 */
+.ctl-stack {
   position: absolute;
   left: 0;
   right: 0;
@@ -260,14 +237,36 @@ aside { display: flex; flex-direction: column; gap: 12px; }
   opacity: 1;
   transition: opacity .28s ease;
 }
-.stage:fullscreen.ctl-idle .ctl-stack,
-.stage:-webkit-full-screen.ctl-idle .ctl-stack {
+.stage.ctl-idle .ctl-stack {
   opacity: 0;
   pointer-events: none;   /* 淡出后点到的是画面（点一下就播放/暂停） */
 }
-.stage:fullscreen.ctl-idle,
-.stage:-webkit-full-screen.ctl-idle { cursor: none; }
-.stage:fullscreen .ctl-stack .controls,
-.stage:-webkit-full-screen .ctl-stack .controls { margin: 0; }
-.stage:fullscreen .ctl-stack .local-bar,
-.stage:-webkit-full-screen .ctl-stack .local-bar { margin: 6px 0 0; }
+.stage.ctl-idle { cursor: none; }
+.ctl-stack .controls { margin: 0; }
+.ctl-stack .local-bar { margin: 6px 0 0; }
+/* 还没选文件时遮罩铺满画面，别让控制条压在选择文件的界面上 */
+#gateOverlay:not(.hidden) ~ .ctl-stack { display: none; }
+
+/* ---- 全屏 ---- */
+/* 全屏布局由 app.js 在 fullscreenchange 时加的 .is-fs 类驱动，不用 :fullscreen 伪类：
+   Firefox 不认 :-webkit-full-screen，而选择器列表里只要有一个不认识的，
+   整条规则连同 :fullscreen 那半截会一起被丢掉（「全屏后控制条不浮现」就是这么来的）。 */
+.stage.is-fs {
+  display: flex;
+  flex-direction: column;
+  position: fixed;   /* 浏览器本来就会把全屏元素钉在视口上，这里写明是为了控制条好定位 */
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  gap: 0;
+  padding: 0;
+  background: #000;
+  overflow: hidden;
+}
+.stage.is-fs .video-wrap {
+  flex: 1 1 auto;
+  min-height: 0;
+  aspect-ratio: auto;
+  border: 0;
+  border-radius: 0;
+}

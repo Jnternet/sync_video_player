@@ -5,6 +5,7 @@ import { readFileSync } from 'node:fs';
 const html = readFileSync(new URL('../web/index.html', import.meta.url), 'utf8');
 const js = readFileSync(new URL('../web/app.js', import.meta.url), 'utf8');
 const css = readFileSync(new URL('../web/app.css', import.meta.url), 'utf8');
+const cssCode = css.replace(/\/\*[\s\S]*?\*\//g, '');   // 注释里会拿伪类当反面教材，检查只看真正的规则
 
 const htmlIds = new Set([...html.matchAll(/\bid="([^"]+)"/g)].map((m) => m[1]));
 const htmlClasses = new Set(
@@ -39,9 +40,9 @@ if (dupes.length) {
   bad++;
 }
 
-// 全屏的样子必须是「画面铺满 + 控制条浮在画面上按需出现」。
-// 回归过两次：先是只全屏 .video-wrap（纯画面）导致全屏后调不了；
-// 后来又把控制条做成占位的一整条，把画面挤小了——所以要同时卡住这两点。
+// 控制条必须是「浮在画面上、不占位置、按需出现」的样子。
+// 回归过几次：只全屏 .video-wrap（纯画面）导致全屏后调不了；控制条占位把画面挤小；
+// 用 :fullscreen 伪类驱动布局，在 Firefox 里整条规则被丢掉，全屏后什么都弹不出来。
 const stageHtml = (html.match(/<section class="stage">[\s\S]*?<\/section>/) || [''])[0];
 const stackHtml = stageHtml.slice(stageHtml.indexOf('class="ctl-stack"'));
 const CONTROLS = ['id="seek"', 'id="rateSel"', 'id="vol"', 'id="muteChk"', 'id="fsBtn"'];
@@ -58,6 +59,20 @@ if (!stageHtml || !stackHtml) {
   }
 }
 
+// 控制条要放在 .video-wrap 里面：这样它跟着画面走（全屏时贴屏幕底部），
+// 并且被画面的圆角裁掉；放到外面就会变成画面下方独立的一条。
+const depthAt = (needle) => {
+  const at = html.indexOf(needle);
+  if (at < 0) return -1;
+  let depth = 0;
+  for (const m of html.slice(0, at).matchAll(/<div\b|<\/div>/g)) depth += m[0] === '</div>' ? -1 : 1;
+  return depth;
+};
+if (depthAt('class="ctl-stack"') !== depthAt('class="video-wrap"') + 1) {
+  console.log('[FAIL] .ctl-stack 没有放在 .video-wrap 里面：控制条不会贴在画面底部（全屏时也不会贴屏幕底部）');
+  bad++;
+}
+
 // 全屏请求要指向 .stage（画面 + 控制条都在里面），不能只全屏 .video-wrap。
 const stageSelFn = (js.match(/function stageEl\(\) \{[\s\S]*?\n\}/) || [''])[0];
 const toggleFn = (js.match(/function toggleFullscreen\(\) \{[\s\S]*?\n\}/) || [''])[0];
@@ -69,39 +84,54 @@ if (!stageSelFn.includes("querySelector('.stage')") || !/stageEl\(\)/.test(toggl
   bad++;
 }
 
-// CSS：控制条挂在画面上面（绝对定位、不吃画面高度），带 -webkit- 前缀兜底
-const stackRule = (css.match(/\.stage:fullscreen \.ctl-stack[\s\S]{0,500}?\}/) || [''])[0];
+// CSS：控制条浮在画面上（绝对定位、不吃画面高度）
+const stackRule = (cssCode.match(/(?:^|\n)\s*\.ctl-stack\s*\{[\s\S]{0,500}?\}/) || [''])[0];
 if (!/position:\s*absolute/.test(stackRule) || !/bottom:\s*0/.test(stackRule)) {
-  console.log('[FAIL] app.css 里 .stage:fullscreen .ctl-stack 不是浮在画面底部的绝对定位（会挤占画面）');
-  bad++;
-}
-if (!/\.stage:-webkit-full-screen \.ctl-stack/.test(css)) {
-  console.log('[FAIL] app.css 缺少 .stage:-webkit-full-screen .ctl-stack（老 Safari 兜底）');
-  bad++;
-}
-if (/^\s*\.ctl-stack\s*[,{]/m.test(css)) {
-  console.log('[FAIL] app.css 给 .ctl-stack 加了全局规则：窗口模式下控制条本来就该正常占位');
+  console.log('[FAIL] app.css 里 .ctl-stack 不是浮在画面底部的绝对定位（会挤占画面）');
   bad++;
 }
 
-// 淡出：静止后整块透明且不拦点击；这里少一条，全屏就会一直挂着一条控制条
-const idleRule = (css.match(/\.stage:fullscreen\.ctl-idle \.ctl-stack[\s\S]{0,300}?\}/) || [''])[0];
+// 这一条是踩过的坑：Firefox 不认 :-webkit-full-screen，而选择器列表里只要有一个
+// 不认识的伪类，整条规则（连 :fullscreen 那半截）会被整体丢弃 —— 全屏后什么都弹不出来。
+// 所以全屏布局一律用 app.js 加在 .stage 上的 .is-fs 类，CSS 里不许再出现带前缀的伪类。
+if (/-webkit-full-screen|-moz-full-screen/.test(cssCode)) {
+  console.log('[FAIL] app.css 又用上了 :-webkit-full-screen / :-moz-full-screen：Firefox 不认带前缀的伪类，'
+    + '混在选择器列表里会让整条规则失效（全屏布局请用 .is-fs 类）');
+  bad++;
+}
+
+// 全屏布局类：画面铺满 + 视频撑开
+if (!/\.stage\.is-fs\s*\{[\s\S]{0,300}?position:\s*fixed/.test(cssCode)) {
+  console.log('[FAIL] app.css 缺少 .stage.is-fs 的全屏布局（全屏时要铺满屏幕、钉住视口）');
+  bad++;
+}
+if (!/\.stage\.is-fs \.video-wrap\s*\{[\s\S]{0,200}?flex/.test(cssCode)) {
+  console.log('[FAIL] app.css 里 .stage.is-fs .video-wrap 没有撑满（全屏后画面不会铺满屏幕）');
+  bad++;
+}
+if (!/classList\.toggle\('is-fs'/.test(js)) {
+  console.log('[FAIL] app.js 没有在 fullscreenchange 时给 .stage 切换 .is-fs（全屏布局靠它生效）');
+  bad++;
+}
+
+// 淡出：静止后整块透明且不拦点击；这里少一条，控制条就会一直挂在画面上
+const idleRule = (cssCode.match(/\.stage\.ctl-idle \.ctl-stack[\s\S]{0,300}?\}/) || [''])[0];
 if (!/opacity:\s*0/.test(idleRule) || !/pointer-events:\s*none/.test(idleRule)) {
   console.log('[FAIL] app.css 缺少 .ctl-idle 的淡出规则（opacity:0 + pointer-events:none）');
   bad++;
 }
 
 // app.js：鼠标/触摸/按键唤醒控制条，静止后倒计时淡出，鼠标停在控制条上不淡出
-if (!/const FS_IDLE_MS\s*=/.test(js) || !/setTimeout\(hideFullscreenControls/.test(js)) {
+if (!/const CTRL_IDLE_MS\s*=/.test(js) || !/setTimeout\(hideControls/.test(js)) {
   console.log('[FAIL] app.js 没有「静止一段时间后淡出控制条」的倒计时');
   bad++;
 }
-if (!/'mousemove'[\s\S]{0,120}?'touchstart'[\s\S]{0,120}?'keydown'/.test(js) ||
-    !/document\.addEventListener\(ev, pokeFullscreenControls/.test(js)) {
-  console.log('[FAIL] app.js 没有接住鼠标移动/触摸/按键来唤醒全屏控制条');
+if (!/'mousemove'[\s\S]{0,120}?'touchstart'/.test(js) ||
+    !/stage\.addEventListener\(ev, pokeControls/.test(js)) {
+  console.log('[FAIL] app.js 没有在画面上接住鼠标移动/触摸来唤醒控制条');
   bad++;
 }
-if (!/mouseenter', holdFullscreenControls/.test(js)) {
+if (!/mouseenter', holdControls/.test(js)) {
   console.log('[FAIL] app.js 少了「鼠标停在控制条上就不淡出」：拖音量/进度条时会被吞掉');
   bad++;
 }

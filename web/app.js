@@ -74,7 +74,7 @@ const S = {
   lastSignature: null,
   autoTrim: false,
   scrubbing: false,
-  fsIdleTimer: 0,
+  ctlIdleTimer: 0,
   hashing: false,
   hashCancel: false,
   wasm: null,
@@ -626,12 +626,11 @@ function render() {
   renderFullscreenBtn();
 }
 
-/* ---------------------------------------------------------------- 全屏 */
+/* ------------------------------------------- 控制条的浮现 / 淡出 / 全屏 */
 
-// 全屏的是整块 .stage（画面 + 浮在画面上的控制条），而不是只有画面的 .video-wrap：
-// 只全屏画面的话，进度条、倍速、音量条都在全屏之外，全屏后一个都调不了。
-// 控制条本身用绝对定位叠在画面底部，不占画面高度，靠 .ctl-idle 淡出/浮回。
-const FS_IDLE_MS = 2600;
+// 控制条贴着画面底部浮在上面，不占画面位置：鼠标不动一会儿就淡出（连指针一起隐藏），
+// 动一下鼠标、碰一下屏幕或按一下键再浮回来；暂停时一直留着，方便点播放、拖进度。
+const CTRL_IDLE_MS = 2600;
 
 function fullscreenElement() {
   return document.fullscreenElement || document.webkitFullscreenElement || null;
@@ -641,25 +640,26 @@ function stageEl() {
   return document.querySelector('.stage');
 }
 
-// 亮出控制条并停住计时器（鼠标正停在控制条上，或刚进全屏）
-function holdFullscreenControls() {
-  clearTimeout(S.fsIdleTimer);
+// 亮出控制条并停住计时器（鼠标正停在控制条上、刚进全屏、或者刚恢复播放）
+function holdControls() {
+  clearTimeout(S.ctlIdleTimer);
   const stage = stageEl();
   if (stage) stage.classList.remove('ctl-idle');
 }
 
-// 有动静（移动鼠标/触摸/按键）就浮现控制条，然后重新开始倒计时
-function pokeFullscreenControls() {
-  holdFullscreenControls();
-  if (!fullscreenElement()) return;   // 窗口模式下控制条一直占位可见，不用淡出
-  S.fsIdleTimer = setTimeout(hideFullscreenControls, FS_IDLE_MS);
+// 有动静（移动鼠标 / 触摸 / 按键）就浮现控制条，然后重新开始倒计时
+function pokeControls() {
+  holdControls();
+  S.ctlIdleTimer = setTimeout(hideControls, CTRL_IDLE_MS);
 }
 
-function hideFullscreenControls() {
+function hideControls() {
   const stage = stageEl();
-  if (!stage || !fullscreenElement()) return;
+  if (!stage) return;
+  // 暂停时一直留着：这时候本来就要能点播放、拖进度
+  if (video.paused) return;
   // 正在拖进度条就别淡出，松开手再数 2.6 秒
-  if (S.scrubbing) { S.fsIdleTimer = setTimeout(hideFullscreenControls, 500); return; }
+  if (S.scrubbing) { S.ctlIdleTimer = setTimeout(hideControls, 500); return; }
   stage.classList.add('ctl-idle');
 }
 
@@ -683,10 +683,12 @@ function renderFullscreenBtn() {
 }
 
 function onFullscreenChange() {
+  const stage = stageEl();
+  const on = !!fullscreenElement();
+  // 全屏布局靠这个类，而不是 :fullscreen 伪类（原因见 app.css 里的说明）
+  if (stage) stage.classList.toggle('is-fs', on);
   renderFullscreenBtn();
-  // 刚进全屏先把控制条亮出来；退出全屏就清掉淡出状态，恢复窗口模式下的一直可见
-  if (fullscreenElement()) pokeFullscreenControls();
-  else holdFullscreenControls();
+  pokeControls();   // 刚切完全屏先把控制条亮出来
 }
 
 /* -------------------------------------------------------------- 事件绑定 */
@@ -738,17 +740,22 @@ function bind() {
   });
   $('rateSel').addEventListener('change', () => op('rate', { value: Number($('rateSel').value) }));
   $('fsBtn').addEventListener('click', toggleFullscreen);
-  // 按 Esc 或浏览器自己的手势退出全屏时，按钮文案与淡出状态都要跟着恢复
+  // 按 Esc 或浏览器自己的手势退出全屏时，按钮文案和全屏布局都要跟着恢复
   ['fullscreenchange', 'webkitfullscreenchange'].forEach((ev) =>
     document.addEventListener(ev, onFullscreenChange));
-  // 全屏里的控制条：动一下鼠标、碰一下屏幕或按一下键就浮出来，静止 2.6 秒淡出
-  ['mousemove', 'touchstart', 'keydown'].forEach((ev) =>
-    document.addEventListener(ev, pokeFullscreenControls, { passive: true }));
+  // 鼠标在画面上动、碰屏幕、按键就浮出控制条；静止后由 hideControls 淡出
+  const stage = stageEl();
+  if (stage) {
+    ['mousemove', 'touchstart', 'pointerdown'].forEach((ev) =>
+      stage.addEventListener(ev, pokeControls, { passive: true }));
+  }
   const stack = document.querySelector('.ctl-stack');
   if (stack) {
-    stack.addEventListener('mouseenter', holdFullscreenControls);   // 鼠标停在控制条上不淡出
-    stack.addEventListener('mouseleave', pokeFullscreenControls);
+    stack.addEventListener('mouseenter', holdControls);   // 鼠标停在控制条上不淡出
+    stack.addEventListener('mouseleave', pokeControls);
   }
+  document.addEventListener('keydown', pokeControls, { passive: true });
+  video.addEventListener('play', pokeControls);   // 暂停时留着控制条，恢复播放后重新计时
   $('gestureBtn').addEventListener('click', async () => {
     await playLocal();
     const st = S.state;

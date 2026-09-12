@@ -1,8 +1,9 @@
-// 全屏控制条的浮现/淡出行为：用最小 DOM 桩加载真实交付的 web/app.js，断言
-//   1) 点「⛶ 全屏」全屏的是 .stage（画面 + 控制条都在里面）
-//   2) 静止一会儿控制条淡出，动鼠标/触摸/按键又浮回来
-//   3) 鼠标停在控制条上、或正在拖进度条时不淡出
-//   4) 退出全屏（以及窗口模式）下不淡出，控制条照常占位可见
+// 控制条的浮现/淡出与全屏切换：用最小 DOM 桩加载真实交付的 web/app.js，断言
+//   1) 点「⛶ 全屏」全屏的是 .stage，并给它加上 .is-fs（全屏布局靠这个类，不靠 :fullscreen 伪类）
+//   2) 鼠标在画面上动/触摸/按键 → 控制条浮现；静止一会儿 → 淡出
+//   3) 鼠标停在控制条上、或正在拖进度条时 → 不淡出
+//   4) 暂停时控制条一直留着；恢复播放后重新计时
+//   5) 退出全屏后布局类被摘掉，窗口模式下同样是「浮现/淡出」这一套
 // 时间用假定时器推进，不真的等 2.6 秒；跑的是交付给浏览器的那份文件。
 import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
@@ -130,63 +131,80 @@ const sandbox = {
 };
 sandbox.globalThis = sandbox;
 
-const exposed = src + '\n;globalThis.__api = { S, bind, FS_IDLE_MS };\n';
+const exposed = src + '\n;globalThis.__api = { S, bind, CTRL_IDLE_MS };\n';
 vm.createContext(sandbox);
 vm.runInContext(exposed, sandbox);
-const { S, bind, FS_IDLE_MS } = sandbox.__api;
+const { S, bind, CTRL_IDLE_MS } = sandbox.__api;
 
 bind();   // 真实页面里由 DOMContentLoaded 触发
 
 const idle = () => stage.classes.has('ctl-idle');
+const fsClass = () => stage.classes.has('is-fs');
+const fsBtn = getEl('fsBtn');
 
 /* ------------------------------------------------------- 场景 */
-console.log('全屏控制条（浮现 / 淡出）行为检查：');
+console.log('控制条（浮现 / 淡出 / 全屏）行为检查：');
 
-getEl('fsBtn').fire('click');
+video.paused = false;   // 先按"正在播放"来测淡出；暂停时不该淡出，单独测
+
+fsBtn.fire('click');
 check(requestedOn === stage, '点「⛶ 全屏」全屏的是 .stage：画面和控制条都进全屏');
-check(fullscreenEl === stage && !idle(), '刚进全屏时控制条先亮着（不是一进去就空屏）');
+check(fsClass(), '进全屏后 .stage 加上 .is-fs（全屏布局靠这个类，不靠 :fullscreen 伪类）');
+check(!idle(), '刚进全屏时控制条先亮着（不是一进去就空屏）');
+check(fsBtn.textContent.includes('退出全屏'), '按钮文案变成「退出全屏」');
 
-advance(FS_IDLE_MS + 50);
-check(idle(), `鼠标静止 ${FS_IDLE_MS}ms 后控制条淡出，不挡画面`);
+advance(CTRL_IDLE_MS + 50);
+check(idle(), `鼠标静止 ${CTRL_IDLE_MS}ms 后控制条淡出，不挡画面`);
 
-fireDoc('mousemove');
-check(!idle(), '鼠标一晃控制条又浮出来');
+stage.fire('mousemove');   // 全屏时 .stage 铺满屏幕，鼠标在任何位置动都落在它身上
+check(!idle(), '鼠标在画面上晃一下控制条就浮出来');
 
-advance(FS_IDLE_MS + 50);
+advance(CTRL_IDLE_MS + 50);
 check(idle(), '晃完不再动又淡出');
 
-fireDoc('touchstart');
+stage.fire('touchstart');
 check(!idle(), '触屏点一下也能唤醒控制条');
 
-advance(FS_IDLE_MS + 50);
+advance(CTRL_IDLE_MS + 50);
 fireDoc('keydown');
 check(!idle(), '按一下键盘也能唤醒控制条');
 
 // 鼠标停在控制条上时不该淡出，否则拖音量/进度条的手会被"吞掉"
 stack.fire('mouseenter');
-advance(FS_IDLE_MS * 3);
+advance(CTRL_IDLE_MS * 3);
 check(!idle(), '鼠标停在控制条上时一直可见（正在调音量/进度）');
 stack.fire('mouseleave');
-advance(FS_IDLE_MS + 50);
+advance(CTRL_IDLE_MS + 50);
 check(idle(), '鼠标离开控制条后重新开始倒计时');
 
 // 正在拖动进度条（按住不放）也不该淡出
-fireDoc('mousemove');
+stage.fire('mousemove');
 S.scrubbing = true;
-advance(FS_IDLE_MS * 2);
+advance(CTRL_IDLE_MS * 2);
 check(!idle(), '正拖着进度条时不淡出');
 S.scrubbing = false;
-advance(FS_IDLE_MS + 50);
+advance(CTRL_IDLE_MS + 50);
 check(idle(), '松开进度条后照常淡出');
 
-// 退出全屏：窗口模式下控制条是正常占位的那一条，必须一直可见
+// 暂停时控制条留着（要能点播放、拖进度），续播后恢复计时
+stage.fire('mousemove');
+video.paused = true;
+advance(CTRL_IDLE_MS * 3);
+check(!idle(), '暂停时控制条一直留着（方便点播放/拖进度）');
+video.paused = false;
+video.fire('play');
+advance(CTRL_IDLE_MS + 50);
+check(idle(), '恢复播放后重新计时并淡出');
+
+// 退出全屏：摘掉全屏布局类，窗口模式下还是同一套浮现/淡出
 document.exitFullscreen();
-check(!idle(), '退出全屏后清掉淡出状态，控制条恢复正常占位显示');
-advance(FS_IDLE_MS * 3);
-check(!idle(), '窗口模式（非全屏）下不会自动淡出');
-fireDoc('mousemove');
-advance(FS_IDLE_MS * 3);
-check(!idle(), '窗口模式下鼠标乱动也不会把控制条藏起来');
+check(!fsClass(), '退出全屏后摘掉 .is-fs');
+check(!idle(), '退出全屏后控制条先亮着');
+check(fsBtn.textContent.includes('全屏') && !fsBtn.textContent.includes('退出'), '按钮文案回到「⛶ 全屏」');
+advance(CTRL_IDLE_MS + 50);
+check(idle(), '窗口模式下不动鼠标同样会淡出（控制条一直不占画面位置）');
+stage.fire('mousemove');
+check(!idle(), '窗口模式下鼠标在画面上晃动也能唤出控制条');
 
 console.log(`\n通过 ${pass} 项，失败 ${fail} 项`);
 process.exit(fail === 0 ? 0 : 1);

@@ -219,7 +219,8 @@ bash scripts/smoke.sh                   # 45 项端到端检查：真实起服�
 ### 测试会自动跑
 
 - **CI**（`.github/workflows/ci.yml`）：push 到 `main`、开 PR 时自动跑全套，并检查
-  `web/sync_video_player_hash.wasm` 与 wasm 源码是否一致（忘了重新构建就会红）。
+  `web/sync_video_player_hash.wasm` 与 wasm 源码是否一致（忘了重新构建就会红；
+  比的是摘要而不是字节，避免不同 rustc 版本编出的体积差异造成误报）。
 - **pre-push 钩子**（`.githooks/pre-push`）：本地推送前自动跑测试，没过就拦住；
   新 clone 启用一次 `git config core.hooksPath .githooks`，急用可 `SKIP_TESTS=1 git push`。
 

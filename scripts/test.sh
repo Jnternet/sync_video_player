@@ -68,34 +68,29 @@ fi
 if [ "$QUICK" -eq 1 ]; then
   skipping "wasm 产物同步 / release 构建 / 冒烟测试" "快速模式（--quick）"
 else
-  # ------------------------------------------------------------ wasm 产物是否跟着源码走
-  if rustup target list --installed 2> /dev/null | grep -q wasm32-unknown-unknown; then
-    before="$(sha256sum web/sync_video_player_hash.wasm | cut -d' ' -f1)"
-    step "重新编译 wasm 哈希器" bash scripts/build-wasm.sh
-    after="$(sha256sum web/sync_video_player_hash.wasm | cut -d' ' -f1)"
-    if [ "$before" != "$after" ]; then
-      echo
-      echo "== 检查 wasm 产物是否已提交 =="
-      echo "  ❌ web/sync_video_player_hash.wasm 与 wasm 源码不一致（刚被重新生成）"
-      echo "     —— 请把新产物一起提交，否则前后端算法会漂移"
-      fail=$((fail + 1))
-    else
-      echo
-      echo "== 检查 wasm 产物是否已提交 =="
-      echo "  ✅ 仓库里的 wasm 产物与源码一致"
-      pass=$((pass + 1))
-    fi
-  else
-    skipping "wasm 产物同步检查" "没装 wasm32-unknown-unknown 目标"
-  fi
-
-  # ---------------------------------------------------------- release 产物与端到端
+  # ---------------------------------------------------------- release 产物
+  # 下面的 wasm 比对要用 CLI 算同一份文件的摘要，所以先构建主程序
   step "构建 release 产物" cargo build --release
 
-  if has node; then
-    step "wasm 与 CLI 的哈希一致性" node scripts/check-wasm.mjs "$BIN"
+  # ------------------------------------------------ wasm 产物是否跟着源码走
+  # 注意：不同 rustc 版本编出的 wasm 字节数可能差很多（实测 18089 vs 22347），
+  # 所以这里比的是"摘要是否一致"，不是字节是否一致。
+  if ! has node; then
+    skipping "wasm 产物一致性与哈希一致性" "没装 node"
+  elif rustup target list --installed 2> /dev/null | grep -q wasm32-unknown-unknown; then
+    committed="$ROOT/target/committed-wasm.wasm"
+    cp web/sync_video_player_hash.wasm "$committed"
+    step "重新编译 wasm 哈希器" bash scripts/build-wasm.sh
+    step "wasm 产物一致 + wasm/CLI/Node 三方一致" \
+      env WASM_COMPARE="$committed" node scripts/check-wasm.mjs "$BIN"
+    if ! git diff --quiet -- web/sync_video_player_hash.wasm; then
+      echo
+      echo "  ⚠️  web/sync_video_player_hash.wasm 有变化：本地重新编译的产物和仓库里那份不同。"
+      echo "      摘要一致的话不影响运行，但记得把新产物一起提交。"
+    fi
   else
-    skipping "wasm 与 CLI 的哈希一致性" "没装 node"
+    skipping "wasm 产物同步检查" "没装 wasm32-unknown-unknown 目标（只验仓库里那份）"
+    step "wasm 与 CLI 的哈希一致性" node scripts/check-wasm.mjs "$BIN"
   fi
 
   if has curl && has jq; then

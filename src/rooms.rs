@@ -568,6 +568,32 @@ mod tests {
         })
     }
 
+    fn media(hash_byte: char, duration_ms: Option<u64>) -> MediaInfo {
+        MediaInfo {
+            hash: hash_byte.to_string().repeat(64),
+            size: 10,
+            name: "x.mkv".into(),
+            duration_ms,
+            mode: "full".into(),
+            set_at_ms: 0,
+        }
+    }
+
+    /// 客户端心跳：带媒体身份、就绪与缓冲状态
+    fn hb(hash_byte: char, buffering: bool) -> Value {
+        json!({
+            "hash": hash_byte.to_string().repeat(64),
+            "size": 10u64,
+            "duration_ms": 60_000u64,
+            "ready": true,
+            "buffering": buffering,
+        })
+    }
+
+    fn hash_of(hash_byte: char) -> String {
+        hash_byte.to_string().repeat(64)
+    }
+
     #[test]
     fn position_math() {
         let mut st = RoomState::default();
@@ -705,5 +731,336 @@ mod tests {
             assert!(changed);
             assert!(st.clients.is_empty());
         }
+    }
+
+    #[test]
+    fn wait_timeout_stops_auto_resume() {
+        let room = Room::new("main");
+        let now = 1_000_000u64;
+        apply_control(&room, "c1", "甲", "set_media", &media_body('a'), now).unwrap();
+        apply_control(&room, "c1", "甲", "play", &json!({}), now).unwrap();
+
+        // 乙开始缓冲 → 全场暂停，并记住"等它好了要续播"
+        apply_control(&room, "c2", "乙", "heartbeat", &hb('a', true), now + 100).unwrap();
+        {
+            let st = room.state.lock().unwrap();
+            assert!(!st.playing && st.paused_by_wait && st.resume_intent);
+        }
+
+        // 90 秒后乙还卡着（心跳一直在，说明人没掉线）→ 放弃自动续播，避免无限期挂起
+        apply_control(
+            &room,
+            "c2",
+            "乙",
+            "heartbeat",
+            &hb('a', true),
+            now + 100 + WAIT_TIMEOUT_MS + 1,
+        )
+        .unwrap();
+        {
+            let st = room.state.lock().unwrap();
+            assert!(st.paused_by_wait, "房间仍停在等待状态");
+            assert!(!st.resume_intent, "超过 90 秒后不应再保留续播意图");
+            assert!(!st.playing);
+        }
+
+        // 乙随后就绪，也不会把全场拉起来（需要人手动按播放）
+        apply_control(
+            &room,
+            "c2",
+            "乙",
+            "heartbeat",
+            &hb('a', false),
+            now + 100 + WAIT_TIMEOUT_MS + 5_000,
+        )
+        .unwrap();
+        {
+            let st = room.state.lock().unwrap();
+            assert!(!st.playing, "放弃续播后即便全部就绪也不自动播放");
+            assert!(!st.paused_by_wait);
+        }
+    }
+
+    #[test]
+    fn buffering_does_not_pause_for_other_media_or_offline_clients() {
+        let room = Room::new("main");
+        let now = 1_000_000u64;
+        apply_control(&room, "c1", "甲", "set_media", &media_body('a'), now).unwrap();
+        apply_control(&room, "c1", "甲", "play", &json!({}), now).unwrap();
+
+        // 拿着别的文件的人缓冲，与房间无关
+        apply_control(&room, "c2", "乙", "heartbeat", &hb('b', true), now + 100).unwrap();
+        {
+            let st = room.state.lock().unwrap();
+            assert!(st.playing, "文件不一致的客户端不该让房间停下");
+            assert!(!st.paused_by_wait);
+        }
+
+        // 已经掉线的客户端即使记着 buffering 也不该影响房间
+        {
+            let mut st = room.state.lock().unwrap();
+            st.touch("c3", "丙", now + 100);
+            let c = st.clients.get_mut("c3").unwrap();
+            c.hash = Some(hash_of('a'));
+            c.buffering = true;
+            c.last_seen_ms = now + 100 - CLIENT_TIMEOUT_MS - 1;
+            assert!(!st.evaluate_wait(now + 100), "掉线客户端的缓冲不该引起变化");
+            assert!(st.playing);
+        }
+    }
+
+    #[test]
+    fn wait_for_buffer_can_be_turned_off_and_on() {
+        let room = Room::new("main");
+        let now = 1_000_000u64;
+        apply_control(&room, "c1", "甲", "set_media", &media_body('a'), now).unwrap();
+        apply_control(
+            &room,
+            "c1",
+            "甲",
+            "set_options",
+            &json!({"wait_for_buffer": false}),
+            now,
+        )
+        .unwrap();
+        apply_control(&room, "c1", "甲", "play", &json!({}), now).unwrap();
+
+        // 关掉之后，有人缓冲也不暂停
+        apply_control(&room, "c2", "乙", "heartbeat", &hb('a', true), now + 100).unwrap();
+        {
+            let st = room.state.lock().unwrap();
+            assert!(st.playing, "关闭等待缓冲后不应暂停");
+            assert!(!st.paused_by_wait);
+        }
+
+        // 重新打开：此刻正好有人在缓冲，于是立刻暂停全场
+        apply_control(
+            &room,
+            "c2",
+            "乙",
+            "set_options",
+            &json!({"wait_for_buffer": true}),
+            now + 200,
+        )
+        .unwrap();
+        {
+            let st = room.state.lock().unwrap();
+            assert!(!st.playing, "重新启用等待缓冲时若有人在缓冲应立即暂停");
+            assert!(st.paused_by_wait && st.resume_intent);
+        }
+
+        // 再关掉：解除等待状态，但不会自作主张继续播放
+        apply_control(
+            &room,
+            "c2",
+            "乙",
+            "set_options",
+            &json!({"wait_for_buffer": false}),
+            now + 300,
+        )
+        .unwrap();
+        {
+            let st = room.state.lock().unwrap();
+            assert!(!st.paused_by_wait && !st.resume_intent);
+            assert!(!st.playing);
+        }
+    }
+
+    #[test]
+    fn rate_is_clamped_and_position_stays_continuous() {
+        let mut st = RoomState::default();
+        st.media = Some(media('a', Some(600_000)));
+        st.base_srv_ms = 0;
+        st.playing = true;
+
+        st.set_rate(2.0, 1_000);
+        assert_eq!(st.base_pos_ms, 1_000.0, "切换倍速时按旧倍速结算位置");
+        assert_eq!(st.pos_at(2_000), 3_000.0, "之后按新倍速推进");
+
+        st.set_rate(99.0, 2_000);
+        assert_eq!(st.rate, 4.0, "倍速上限 4 倍");
+        st.set_rate(0.0, 2_000);
+        assert_eq!(st.rate, 0.25, "倍速下限 0.25 倍");
+        st.set_rate(-5.0, 2_000);
+        assert_eq!(st.rate, 0.25);
+    }
+
+    #[test]
+    fn seek_while_paused_keeps_the_clock() {
+        let mut st = RoomState::default();
+        st.media = Some(media('a', Some(60_000)));
+        st.base_srv_ms = 5_000;
+        st.base_pos_ms = 1_000.0;
+
+        st.seek(30_000.0, 9_000);
+        assert_eq!(st.base_srv_ms, 5_000, "暂停时基准时钟不动");
+        assert_eq!(st.base_pos_ms, 30_000.0);
+
+        st.playing = true;
+        st.seek(31_000.0, 9_500);
+        assert_eq!(st.base_srv_ms, 9_500, "播放中跳转要重新锚定时间戳");
+    }
+
+    #[test]
+    fn seek_is_clamped_and_accepts_numeric_string() {
+        let room = Room::new("main");
+        let now = now_ms();
+        apply_control(&room, "c1", "甲", "set_media", &media_body('a'), now).unwrap();
+        apply_control(&room, "c1", "甲", "seek", &json!({"value": -5_000}), now).unwrap();
+        assert_eq!(room.state.lock().unwrap().base_pos_ms, 0.0);
+        apply_control(&room, "c1", "甲", "seek", &json!({"value": "12000"}), now).unwrap();
+        assert_eq!(room.state.lock().unwrap().base_pos_ms, 12_000.0);
+    }
+
+    #[test]
+    fn bad_control_ops_are_rejected() {
+        let room = Room::new("main");
+        let now = now_ms();
+        let expect = |client: &str, op: &str, body: Value, code: &str| {
+            let err =
+                apply_control(&room, client, "甲", op, &body, now).expect_err("应该报错");
+            assert_eq!(err.code, code, "指令 {op} 的错误码（client={client:?}）");
+        };
+        expect("c1", "seek", json!({}), "bad_request");
+        expect("c1", "rate", json!({"value": "快"}), "bad_request");
+        expect("c1", "set_media", json!({"size": 1}), "bad_request");
+        expect("c1", "set_media", json!({"hash": "xyz"}), "bad_request");
+        expect("c1", "set_media", json!({"hash": "a".repeat(63)}), "bad_request");
+        expect("c1", "乱来", json!({}), "unknown_op");
+        // 心跳必须有 client，否则无法识别是谁
+        expect("", "heartbeat", json!({}), "bad_request");
+    }
+
+    #[test]
+    fn set_media_backfills_duration_without_losing_identity() {
+        let room = Room::new("main");
+        let now = 1_000_000u64;
+        let first = json!({"hash": hash_of('a'), "size": 10, "name": "x.mkv"});
+        apply_control(&room, "c1", "甲", "set_media", &first, now).unwrap();
+        let version_before = room.state.lock().unwrap().version;
+
+        // 同一份文件：只补上缺失的时长，不改名字/大小/房主
+        let again = json!({"hash": hash_of('A'), "size": 999, "name": "别的名字", "duration_ms": 60_000u64});
+        apply_control(&room, "c2", "乙", "set_media", &again, now + 10).unwrap();
+        let st = room.state.lock().unwrap();
+        let m = st.media.as_ref().unwrap();
+        assert_eq!(m.duration_ms, Some(60_000));
+        assert_eq!(m.name, "x.mkv", "补时长不该覆盖已有元信息");
+        assert_eq!(m.size, 10);
+        assert_eq!(st.owner.as_deref(), Some("c1"), "房主仍然是第一个设定媒体的人");
+        assert!(st.version > version_before, "补齐时长也算一次状态变化");
+    }
+
+    #[test]
+    fn heartbeat_updates_client_fields() {
+        let room = Room::new("main");
+        let now = 1_000_000u64;
+        // 名字来自 apply_control 的 name 参数（HTTP 路由从 body 取，SSE 从查询参数取）
+        apply_control(
+            &room,
+            "c1",
+            "甲改名",
+            "heartbeat",
+            &json!({
+                "hash": "AB".repeat(32),
+                "size": 42u64,
+                "duration_ms": 999u64,
+                "ready": true,
+                "buffering": true,
+            }),
+            now,
+        )
+        .unwrap();
+        {
+            let st = room.state.lock().unwrap();
+            let c = &st.clients["c1"];
+            assert_eq!(c.hash.as_deref(), Some("ab".repeat(32).as_str()), "哈希统一转小写");
+            assert_eq!(c.size, Some(42));
+            assert_eq!(c.duration_ms, Some(999));
+            assert!(c.ready && c.buffering);
+            assert_eq!(c.name, "甲改名");
+        }
+
+        // 名字留空时保留上一个名字；hash 传空串表示"当前没选文件"
+        apply_control(
+            &room,
+            "c1",
+            "",
+            "heartbeat",
+            &json!({"hash": "", "buffering": false}),
+            now + 100,
+        )
+        .unwrap();
+        {
+            let st = room.state.lock().unwrap();
+            let c = &st.clients["c1"];
+            assert_eq!(c.name, "甲改名");
+            assert_eq!(c.hash, None);
+            assert!(!c.buffering);
+        }
+    }
+
+    #[test]
+    fn waiters_and_snapshot_expose_protocol_fields() {
+        let room = Room::new("main");
+        let now = 1_000_000u64;
+        apply_control(&room, "c1", "甲", "set_media", &media_body('a'), now).unwrap();
+        apply_control(&room, "c1", "甲", "heartbeat", &hb('a', false), now).unwrap();
+        apply_control(&room, "c2", "乙", "heartbeat", &hb('b', true), now).unwrap();
+        apply_control(&room, "c3", "丙", "heartbeat", &hb('a', true), now).unwrap();
+
+        {
+            let st = room.state.lock().unwrap();
+            assert_eq!(st.waiters(), vec!["丙".to_string()], "只统计同一份文件的缓冲者");
+        }
+
+        let snap = room.snapshot(now);
+        assert_eq!(snap["media"]["hash"], json!(hash_of('a')));
+        assert_eq!(snap["playing"], json!(false));
+        assert_eq!(snap["owner"], json!("c1"));
+        assert_eq!(snap["paused_by_wait"], json!(false), "丙是刚来的，还没暂停全场");
+        let clients = snap["clients"].as_array().unwrap();
+        assert_eq!(clients.len(), 3);
+        let by_id = |id: &str| clients.iter().find(|c| c["id"] == json!(id)).unwrap().clone();
+        assert_eq!(by_id("c1")["owner"], json!(true));
+        assert_eq!(by_id("c1")["matches"], json!(true));
+        assert_eq!(by_id("c2")["matches"], json!(false));
+        assert_eq!(by_id("c2")["buffering"], json!(true));
+        assert_eq!(by_id("c3")["online"], json!(true));
+        assert_eq!(by_id("c3")["ready"], json!(true));
+    }
+
+    #[test]
+    fn reset_media_clears_the_room() {
+        let room = Room::new("main");
+        let now = 1_000_000u64;
+        apply_control(&room, "c1", "甲", "set_media", &media_body('a'), now).unwrap();
+        apply_control(&room, "c1", "甲", "play", &json!({}), now).unwrap();
+        apply_control(&room, "c1", "甲", "reset_media", &json!({}), now + 10).unwrap();
+        {
+            let st = room.state.lock().unwrap();
+            assert!(st.media.is_none());
+            assert!(st.owner.is_none());
+            assert!(!st.playing && !st.paused_by_wait && !st.resume_intent);
+            assert_eq!(st.base_pos_ms, 0.0);
+        }
+    }
+
+    #[test]
+    fn normalize_room_keeps_case_and_truncates() {
+        assert_eq!(normalize_room("AbC-1_2"), "AbC-1_2");
+        assert_eq!(normalize_room(&"x".repeat(50)), "x".repeat(32));
+        assert_eq!(normalize_room("  电影  main  "), "main");
+        assert_eq!(Registry::new().get_or_create("").id, "main");
+    }
+
+    #[test]
+    fn registry_shares_rooms_by_normalized_id() {
+        let reg = Registry::new();
+        let a = reg.get_or_create("Room-1");
+        let b = reg.get_or_create(" Room-1 ");
+        assert!(Arc::ptr_eq(&a, &b), "同一房间名应拿到同一个房间");
+        assert_eq!(reg.get_or_create("别的").id, "main");
+        assert_eq!(reg.all().len(), 2);
     }
 }

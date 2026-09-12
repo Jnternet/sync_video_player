@@ -1,7 +1,7 @@
 // 键盘快捷键：用最小 DOM 桩加载真实交付的 web/app.js，断言
 //   1) Q 开关快捷键提示面板（顶栏按钮、关闭按钮、点暗背景、Esc 都能关），面板开着时控制条不淡出
 //   2) F 全屏 / 退出全屏（全屏的是 .stage）
-//   3) W/S/↑/↓ 音量 ±10%，音量 ≤10% 时改成 ±2%，且只在本机（不发请求）
+//   3) M 静音；W/S/↑/↓ 音量 ±10%，音量 ≤10% 时改成 ±2%，两者都只在本机（不发请求）
 //   4) A/D/←/→ 后退/前进 5 秒，并跟拖进度条一样把 seek 发给房间
 //   5) 按住 D/→：不到 0.2 秒算单击（+5 秒）；超过 0.2 秒进 2 倍速、松开回房间倍速，全程不发请求
 //   6) 输入框/滑块里不吃快捷键、复选框与按钮上照常生效；长按的自动重复不算新的一次按键
@@ -238,6 +238,16 @@ video.volume = 0.5;
 keyDown('ArrowUp');
 check(posts.length === postsBeforeVolume, '调音量一个请求都不发（协议里本来就没有音量字段）');
 
+/* ---- M：静音 ---- */
+video.muted = false;
+getEl('muteChk').checked = false;
+keyDown('m');
+check(video.muted === true, '按 M 静音');
+check(getEl('muteChk').checked === true, '控制条上的「静音」复选框跟着勾上（两边不会各说各话）');
+keyDown('m');
+check(video.muted === false && getEl('muteChk').checked === false, '再按 M 取消静音');
+check(posts.length === postsBeforeVolume, '静音也是一个请求都不发（协议里没有静音字段）');
+
 /* ---- A/D/←/→：±5 秒（跳转是控制信息，要发给房间）---- */
 currentTime = 100;
 posts.length = 0;
@@ -318,6 +328,9 @@ check(!S.keysOpen, '在输入框里打 q 不会弹出面板（文字要能正常
 video.volume = 0.5;
 keyDown('w', { target: textarea });
 check(Math.abs(video.volume - 0.5) < 1e-9, '在输入框里按 w 不改音量');
+video.muted = false;
+keyDown('m', { target: textarea });
+check(video.muted === false, '在输入框里按 m 不会静音（要能正常输入文字）');
 currentTime = 100;
 posts.length = 0;
 keyDown('d', { target: textarea });

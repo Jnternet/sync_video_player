@@ -751,7 +751,7 @@ function onFullscreenChange() {
 }
 
 /* --------------------------------------------------------- 键盘快捷键 */
-/* Q 面板 / F 全屏 / W S ↑ ↓ 音量 / A D ← → 跳转 5 秒 / 按住 D → 本机 2 倍速快进。
+/* Q 面板 / F 全屏 / M 静音 / W S ↑ ↓ 音量 / A D ← → 跳转 5 秒 / 按住 D → 2 倍速快进。
  * 输入框、下拉框、滑块里都不抢键：那些控件里的方向键有原生含义（移动光标、换选项、拖滑块）。 */
 
 const SEEK_STEP_MS = 5000;     // A/D 或 ←/→ 一次移动的时长
@@ -808,6 +808,13 @@ function bumpVolume(dir) {
   return next;
 }
 
+// 静音同样只在本机生效；顶栏那枚复选框跟着一起翻，两边不会各说各话
+function toggleMute() {
+  video.muted = !video.muted;
+  $('muteChk').checked = video.muted;
+  return video.muted;
+}
+
 // 跳转是控制信息：跟拖进度条一样操作房间（所有人一起跳）。本机先跳一下立刻响应，不等回声。
 function seekBy(ms) {
   if (!canControlRoom()) return;
@@ -853,7 +860,7 @@ function cancelHoldScan() {
 // 认这几个键，返回规范化后的小写名字；其它键返回 null，原样交给浏览器
 function shortcutKey(e) {
   const k = e && e.key ? String(e.key).toLowerCase() : '';
-  if (k === 'q' || k === 'f' || k === 'w' || k === 's' || k === 'a' || k === 'd' || k === 'escape') return k;
+  if (k === 'q' || k === 'f' || k === 'm' || k === 'w' || k === 's' || k === 'a' || k === 'd' || k === 'escape') return k;
   if (k === 'arrowup' || k === 'arrowdown' || k === 'arrowleft' || k === 'arrowright') return k;
   return null;
 }
@@ -868,6 +875,7 @@ function onShortcutDown(e) {
   if (e.repeat) return;                       // 长按产生的自动重复不算新的一次按键
   if (k === 'q') { toggleKeysPanel(); return; }
   if (k === 'f') { toggleFullscreen(); return; }
+  if (k === 'm') { toggleMute(); return; }
   if (k === 'w' || k === 'arrowup') { bumpVolume(1); return; }
   if (k === 's' || k === 'arrowdown') { bumpVolume(-1); return; }
   if (k === 'a' || k === 'arrowleft') { seekBy(-SEEK_STEP_MS); return; }

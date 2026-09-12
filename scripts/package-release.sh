@@ -1,8 +1,11 @@
 #!/usr/bin/env bash
 # 构建并打包发布产物：Linux 静态(musl) + Windows(x86_64-pc-windows-gnu)
 #
-#   bash scripts/package-release.sh             # 构建 + 打包到 dist/
-#   bash scripts/package-release.sh --publish   # 再上传到 GitHub Release
+#   bash scripts/package-release.sh                       # 构建 + 打包到 dist/
+#   bash scripts/package-release.sh --publish             # 再上传到 GitHub Release
+#   bash scripts/package-release.sh --notes-file <文件> --publish
+#                                                         # 顺便把发布说明写进 Release
+#   bash scripts/package-release.sh --notes "一句话说明" --publish
 #
 # 依赖：
 #   * Linux 产物：  rustup target add x86_64-unknown-linux-musl
@@ -16,12 +19,18 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
 PUBLISH=0
-for arg in "$@"; do
-  case "$arg" in
+NOTES=""
+while [ $# -gt 0 ]; do
+  case "$1" in
     --publish) PUBLISH=1 ;;
-    -h|--help) sed -n '2,10p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
-    *) echo "未知参数：$arg（可用：--publish）" >&2; exit 2 ;;
+    --notes) NOTES="${2:-}"; shift ;;
+    --notes-file)
+      [ -n "${2:-}" ] && [ -f "$2" ] || { echo "读不到发布说明文件：${2:-（缺参数）}" >&2; exit 2; }
+      NOTES="$(cat "$2")"; shift ;;
+    -h|--help) sed -n '2,14p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    *) echo "未知参数：$1（可用：--publish / --notes / --notes-file）" >&2; exit 2 ;;
   esac
+  shift
 done
 
 NAME="sync_video_player"
@@ -120,13 +129,19 @@ ID="$(find_release)"
 if [ -z "$ID" ]; then
   echo "  Release $TAG 不存在，创建一个"
   RESULT="$("${CURL[@]}" -X POST -H 'Content-Type: application/json' "$API/releases" \
-    -d "$(jq -nc --arg t "$TAG" '{tag_name:$t,name:$t,draft:false,prerelease:false}')")"
+    -d "$(jq -nc --arg t "$TAG" --arg b "$NOTES" '{tag_name:$t,name:$t,draft:false,prerelease:false,body:$b}')")"
   ID="$(printf '%s' "$RESULT" | jq -r '.id // empty')"
   if [ -z "$ID" ]; then
     # 并发/延迟导致的 already_exists：再查一次
     ID="$(find_release)"
     [ -n "$ID" ] || { echo "创建 Release 失败：$RESULT" >&2; exit 1; }
   fi
+fi
+
+if [ -n "$NOTES" ]; then
+  echo "  写入发布说明（$(printf '%s' "$NOTES" | wc -l) 行）"
+  "${CURL[@]}" -X PATCH -H 'Content-Type: application/json' "$API/releases/$ID" \
+    -d "$(jq -nc --arg b "$NOTES" '{body:$b}')" > /dev/null
 fi
 
 for f in "$DIST"/*.tar.gz "$DIST"/*.zip; do

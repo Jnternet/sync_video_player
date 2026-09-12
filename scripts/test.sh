@@ -78,15 +78,16 @@ else
   if ! has node; then
     skipping "wasm 产物一致性与哈希一致性" "没装 node"
   elif rustup target list --installed 2> /dev/null | grep -q wasm32-unknown-unknown; then
-    committed="$ROOT/target/committed-wasm.wasm"
-    cp web/sync_video_player_hash.wasm "$committed"
-    step "重新编译 wasm 哈希器" bash scripts/build-wasm.sh
+    # 重编译产物写到 target/，不覆盖仓库里那份（否则后面冒烟测试会比到两份不同的文件）
+    fresh="$ROOT/target/wasm-rebuilt.wasm"
+    step "重新编译 wasm 哈希器" env WASM_OUT="$fresh" bash scripts/build-wasm.sh
     step "wasm 产物一致 + wasm/CLI/Node 三方一致" \
-      env WASM_COMPARE="$committed" node scripts/check-wasm.mjs "$BIN"
-    if ! git diff --quiet -- web/sync_video_player_hash.wasm; then
+      env WASM_PATH="$fresh" WASM_COMPARE="$ROOT/web/sync_video_player_hash.wasm" \
+      node scripts/check-wasm.mjs "$BIN"
+    if ! cmp -s "$fresh" web/sync_video_player_hash.wasm; then
       echo
-      echo "  ⚠️  web/sync_video_player_hash.wasm 有变化：本地重新编译的产物和仓库里那份不同。"
-      echo "      摘要一致的话不影响运行，但记得把新产物一起提交。"
+      echo "  ℹ️  两份 wasm 字节不同（本地 rustc 与产出仓库产物的那份版本不同）；"
+      echo "      摘要已比对一致，所以不影响运行，也不用重新提交产物。"
     fi
   else
     skipping "wasm 产物同步检查" "没装 wasm32-unknown-unknown 目标（只验仓库里那份）"

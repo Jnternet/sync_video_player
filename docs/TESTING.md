@@ -30,7 +30,8 @@ bash scripts/test.sh --help
    里面还多一条**产物漂移检查**——重新编译 wasm 后，比对它与仓库里 `web/sync_video_player_hash.wasm`
    算出的摘要，不一致就直接红，防止「改了 `sha256.rs` / `hashspec.rs` 却忘了重新构建并提交 wasm」。
    比的是**摘要**而不是字节：不同 rustc 版本编出的 wasm 体积差很多（实测 18089 vs 22347 字节），
-   字节比法会误报；摘要一致才说明算法真的没漂移。
+   字节比法会误报；摘要一致才说明算法真的没漂移。重编译的产物写到临时目录（`WASM_OUT=`），
+   不会覆盖仓库里那份文件——冒烟测试还要靠它验证「服务端发出去的就是提交进仓库的产物」。
 2. **pre-push 钩子**（`.githooks/pre-push`）：本地推送前自动跑测试，没过就拦住推送。
    已在本仓库启用（`git config core.hooksPath .githooks`）；换机器 clone 后启用一次即可：
 

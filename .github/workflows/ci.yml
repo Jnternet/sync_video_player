@@ -40,12 +40,13 @@ jobs:
       # 两条硬规则里的一条：哈希算法由主程序与 wasm 共用同一份源码，
       # 所以仓库里的 wasm 产物必须跟着源码走，否则说明忘了重新构建并提交。
       # 比的是摘要（不是字节）：不同 rustc 版本编出的 wasm 字节数会差很多，但摘要必须一致。
-      # 同一步顺带把 wasm / CLI / Node crypto 三方摘要对齐。
+      # 重编译产物写到 $RUNNER_TEMP，不覆盖仓库里那份——冒烟测试要拿它验证"服务端发出去的
+      # 就是仓库里提交的产物"。同一步顺带把 wasm / CLI / Node crypto 三方摘要对齐。
       - name: 校验 wasm 产物与源码一致（并比对三方摘要）
         run: |
-          cp web/sync_video_player_hash.wasm "$RUNNER_TEMP/committed.wasm"
-          bash scripts/build-wasm.sh
-          WASM_COMPARE="$RUNNER_TEMP/committed.wasm" node scripts/check-wasm.mjs target/release/sync_video_player
+          WASM_OUT="$RUNNER_TEMP/rebuilt.wasm" bash scripts/build-wasm.sh
+          WASM_PATH="$RUNNER_TEMP/rebuilt.wasm" WASM_COMPARE=web/sync_video_player_hash.wasm \
+            node scripts/check-wasm.mjs target/release/sync_video_player
 
       - name: 端到端冒烟测试
         run: bash scripts/smoke.sh

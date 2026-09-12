@@ -80,11 +80,16 @@ video.pause = () => {};
 
 const stage = getEl('stage');
 const stack = getEl('ctlStack');
+// 画面区域：0,0 - 800,450。控制条按坐标判断指针在不在画面上，所以要一个真实矩形。
+const wrap = getEl('videoWrap');
+wrap.getBoundingClientRect = () => ({ left: 0, top: 0, right: 800, bottom: 450, width: 800, height: 450 });
 let fullscreenEl = null;
 let requestedOn = null;
 
 const docHandlers = new Map();
 const fireDoc = (ev) => (docHandlers.get(ev) || []).forEach((fn) => fn({ type: ev }));
+const winHandlers = new Map();
+const fireWin = (ev, props) => (winHandlers.get(ev) || []).forEach((fn) => fn(Object.assign({ type: ev }, props)));
 
 stage.requestFullscreen = function () {
   requestedOn = this;                                   // 记下全屏的到底是哪个元素
@@ -95,7 +100,9 @@ stage.requestFullscreen = function () {
 
 const document = {
   getElementById: getEl,
-  querySelector: (sel) => (sel === '.stage' ? stage : sel === '.ctl-stack' ? stack : null),
+  querySelector: (sel) => (
+    sel === '.stage' ? stage : sel === '.ctl-stack' ? stack : sel === '.video-wrap' ? wrap : null
+  ),
   querySelectorAll: () => [],
   addEventListener: (ev, fn) => {
     if (!docHandlers.has(ev)) docHandlers.set(ev, []);
@@ -108,7 +115,13 @@ const document = {
 
 const sandbox = {
   document,
-  window: { addEventListener: () => {}, prompt: () => {} },
+  window: {
+    addEventListener: (ev, fn) => {
+      if (!winHandlers.has(ev)) winHandlers.set(ev, []);
+      winHandlers.get(ev).push(fn);
+    },
+    prompt: () => {},
+  },
   location: { search: '?room=test', origin: 'http://127.0.0.1:8080' },
   localStorage: {
     _m: new Map(),
@@ -141,6 +154,8 @@ bind();   // 真实页面里由 DOMContentLoaded 触发
 const idle = () => stage.classes.has('ctl-idle');
 const fsClass = () => stage.classes.has('is-fs');
 const fsBtn = getEl('fsBtn');
+const pointerIn = () => fireWin('pointermove', { clientX: 400, clientY: 300 });    // 画面里（0,0-800,450）
+const pointerOut = () => fireWin('pointermove', { clientX: 1500, clientY: 900 });  // 画面外
 
 /* ------------------------------------------------------- 场景 */
 console.log('控制条（浮现 / 淡出 / 全屏）行为检查：');
@@ -156,13 +171,17 @@ check(fsBtn.textContent.includes('退出全屏'), '按钮文案变成「退出�
 advance(CTRL_IDLE_MS + 50);
 check(idle(), `鼠标静止 ${CTRL_IDLE_MS}ms 后控制条淡出，不挡画面`);
 
-stage.fire('mousemove');   // 全屏时 .stage 铺满屏幕，鼠标在任何位置动都落在它身上
-check(!idle(), '鼠标在画面上晃一下控制条就浮出来');
+pointerIn();
+check(!idle(), '鼠标在画面上晃一下控制条就浮出来（按坐标判断，不依赖事件目标）');
+
+advance(CTRL_IDLE_MS + 50);
+pointerOut();
+check(idle(), '鼠标在画面外晃动不会唤醒控制条');
 
 advance(CTRL_IDLE_MS + 50);
 check(idle(), '晃完不再动又淡出');
 
-stage.fire('touchstart');
+fireWin('touchstart', {});
 check(!idle(), '触屏点一下也能唤醒控制条');
 
 advance(CTRL_IDLE_MS + 50);
@@ -178,7 +197,7 @@ advance(CTRL_IDLE_MS + 50);
 check(idle(), '鼠标离开控制条后重新开始倒计时');
 
 // 正在拖动进度条（按住不放）也不该淡出
-stage.fire('mousemove');
+pointerIn();
 S.scrubbing = true;
 advance(CTRL_IDLE_MS * 2);
 check(!idle(), '正拖着进度条时不淡出');
@@ -187,7 +206,7 @@ advance(CTRL_IDLE_MS + 50);
 check(idle(), '松开进度条后照常淡出');
 
 // 暂停时控制条留着（要能点播放、拖进度），续播后恢复计时
-stage.fire('mousemove');
+pointerIn();
 video.paused = true;
 advance(CTRL_IDLE_MS * 3);
 check(!idle(), '暂停时控制条一直留着（方便点播放/拖进度）');
@@ -203,7 +222,7 @@ check(!idle(), '退出全屏后控制条先亮着');
 check(fsBtn.textContent.includes('全屏') && !fsBtn.textContent.includes('退出'), '按钮文案回到「⛶ 全屏」');
 advance(CTRL_IDLE_MS + 50);
 check(idle(), '窗口模式下不动鼠标同样会淡出（控制条一直不占画面位置）');
-stage.fire('mousemove');
+pointerIn();
 check(!idle(), '窗口模式下鼠标在画面上晃动也能唤出控制条');
 
 console.log(`\n通过 ${pass} 项，失败 ${fail} 项`);

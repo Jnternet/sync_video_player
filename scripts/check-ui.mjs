@@ -59,8 +59,9 @@ if (!stageHtml || !stackHtml) {
   }
 }
 
-// 控制条要放在 .video-wrap 里面：这样它跟着画面走（全屏时贴屏幕底部），
-// 并且被画面的圆角裁掉；放到外面就会变成画面下方独立的一条。
+// 控制条必须是 .video-wrap 的兄弟节点（同一个 .stage 里），而不是塞在画面容器里面：
+// 画面容器带 overflow:hidden + 圆角，视频又常自成一个合成层，浮层塞在里面时
+// 某些浏览器会把它画到视频下面——表现就是「点得到、看不见」。同时它不能在 .stage 外面。
 const depthAt = (needle) => {
   const at = html.indexOf(needle);
   if (at < 0) return -1;
@@ -68,8 +69,12 @@ const depthAt = (needle) => {
   for (const m of html.slice(0, at).matchAll(/<div\b|<\/div>/g)) depth += m[0] === '</div>' ? -1 : 1;
   return depth;
 };
-if (depthAt('class="ctl-stack"') !== depthAt('class="video-wrap"') + 1) {
-  console.log('[FAIL] .ctl-stack 没有放在 .video-wrap 里面：控制条不会贴在画面底部（全屏时也不会贴屏幕底部）');
+if (depthAt('class="ctl-stack"') !== depthAt('class="video-wrap"')) {
+  console.log('[FAIL] .ctl-stack 不是 .video-wrap 的兄弟节点：塞进画面容器里会被 overflow/合成层吃掉（点得到、看不见）');
+  bad++;
+}
+if (!/\.stage\s*\{[\s\S]{0,120}?position:\s*relative/.test(cssCode)) {
+  console.log('[FAIL] app.css 里 .stage 不是 position:relative：控制条会相对别的东西定位，跑到画面外面');
   bad++;
 }
 
@@ -88,6 +93,15 @@ if (!stageSelFn.includes("querySelector('.stage')") || !/stageEl\(\)/.test(toggl
 const stackRule = (cssCode.match(/(?:^|\n)\s*\.ctl-stack\s*\{[\s\S]{0,500}?\}/) || [''])[0];
 if (!/position:\s*absolute/.test(stackRule) || !/bottom:\s*0/.test(stackRule)) {
   console.log('[FAIL] app.css 里 .ctl-stack 不是浮在画面底部的绝对定位（会挤占画面）');
+  bad++;
+}
+// 视频会自成一个合成层；浮层不提层就会被画在视频下面。这条是「点得到看不见」的防线。
+if (!/transform:\s*translateZ\(0\)/.test(stackRule)) {
+  console.log('[FAIL] app.css 里 .ctl-stack 没有 transform: translateZ(0)：浮层可能被画到视频层下面（点得到、看不见）');
+  bad++;
+}
+if (!/\.stage\.ctl-blocked \.ctl-stack/.test(cssCode)) {
+  console.log('[FAIL] app.css 缺少 .stage.ctl-blocked .ctl-stack：选文件时会有一层控制条压在选择界面上');
   bad++;
 }
 
@@ -126,9 +140,17 @@ if (!/const CTRL_IDLE_MS\s*=/.test(js) || !/setTimeout\(hideControls/.test(js)) 
   console.log('[FAIL] app.js 没有「静止一段时间后淡出控制条」的倒计时');
   bad++;
 }
-if (!/'mousemove'[\s\S]{0,120}?'touchstart'/.test(js) ||
-    !/stage\.addEventListener\(ev, pokeControls/.test(js)) {
-  console.log('[FAIL] app.js 没有在画面上接住鼠标移动/触摸来唤醒控制条');
+// 浮现必须挂在 window 的捕获阶段 + 按坐标判断：不依赖事件目标，视频层怎么折腾都能收到
+if (!/'pointermove'[\s\S]{0,200}?window\.addEventListener\(ev, onPointerActivity, \{ capture: true/.test(js)) {
+  console.log('[FAIL] app.js 没有在 window 捕获阶段接住指针移动来唤醒控制条（视频层会让事件目标不可靠）');
+  bad++;
+}
+if (!/function pointerInPlayer\(ev\)[\s\S]{0,400}?getBoundingClientRect\(\)/.test(js)) {
+  console.log('[FAIL] app.js 的 pointerInPlayer() 没有按画面矩形判断指针位置');
+  bad++;
+}
+if (!/function initDebugPanel\(\)/.test(js)) {
+  console.log('[FAIL] app.js 缺少 ?debug=1 调试面板（出问题时要靠它看状态）');
   bad++;
 }
 if (!/mouseenter', holdControls/.test(js)) {

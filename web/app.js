@@ -11,6 +11,8 @@
 
 const $ = (id) => document.getElementById(id);
 const video = $('video');
+// 界面版本标记：加 ?debug=1 会显示出来，用来确认浏览器里跑的到底是哪一版前端
+const UI_REV = 'r5-2026-09-12';
 
 const fmtTime = (ms) => {
   if (!isFinite(ms) || ms < 0) ms = 0;
@@ -559,11 +561,12 @@ function renderGate() {
   const st = S.state;
   const rm = st && st.media;
 
-  if (S.file && S.matches === true && rm) {
-    gate.classList.add('hidden');
-    return;
-  }
-  gate.classList.remove('hidden');
+  // 遮罩开着的时候（还在选文件）别让控制条压在它上面
+  const open = !(S.file && S.matches === true && rm);
+  gate.classList.toggle('hidden', !open);
+  const stage = stageEl();
+  if (stage) stage.classList.toggle('ctl-blocked', open);
+  if (!open) return;
   actions.innerHTML = '';
 
   if (!S.file) {
@@ -663,6 +666,19 @@ function hideControls() {
   stage.classList.add('ctl-idle');
 }
 
+// 指针在不在画面上：只看坐标，不看事件目标 —— 视频经常自成一个合成层，
+// 事件目标是它还是它下面的元素都不该影响「晃动鼠标就浮出控制条」。
+function pointerInPlayer(ev) {
+  const wrap = document.querySelector('.video-wrap');
+  if (!wrap || typeof ev.clientX !== 'number' || typeof ev.clientY !== 'number') return true;
+  const r = wrap.getBoundingClientRect();
+  return ev.clientX >= r.left && ev.clientX <= r.right && ev.clientY >= r.top && ev.clientY <= r.bottom;
+}
+
+function onPointerActivity(ev) {
+  if (pointerInPlayer(ev)) pokeControls();
+}
+
 function toggleFullscreen() {
   const stage = stageEl();
   if (!stage) return;
@@ -743,12 +759,10 @@ function bind() {
   // 按 Esc 或浏览器自己的手势退出全屏时，按钮文案和全屏布局都要跟着恢复
   ['fullscreenchange', 'webkitfullscreenchange'].forEach((ev) =>
     document.addEventListener(ev, onFullscreenChange));
-  // 鼠标在画面上动、碰屏幕、按键就浮出控制条；静止后由 hideControls 淡出
-  const stage = stageEl();
-  if (stage) {
-    ['mousemove', 'touchstart', 'pointerdown'].forEach((ev) =>
-      stage.addEventListener(ev, pokeControls, { passive: true }));
-  }
+  // 浮现控制条：在 window 上用捕获阶段接指针事件，再按坐标判断是不是在画面上。
+  // 这样不依赖事件目标，视频/合成层怎么折腾都能收到。
+  ['pointermove', 'mousemove', 'pointerdown', 'mousedown', 'wheel', 'touchstart'].forEach((ev) =>
+    window.addEventListener(ev, onPointerActivity, { capture: true, passive: true }));
   const stack = document.querySelector('.ctl-stack');
   if (stack) {
     stack.addEventListener('mouseenter', holdControls);   // 鼠标停在控制条上不淡出
@@ -823,8 +837,47 @@ function bind() {
 
 /* ---------------------------------------------------------------- 启动 */
 
+/* ------------------------------------------------------------ 调试面板 */
+
+// 加 ?debug=1 打开：右下角实时显示「控制条为什么看不见」需要的那几个量。
+// 只在带参数时出现，正常使用完全不受影响。
+function initDebugPanel() {
+  if (params.get('debug') !== '1') return;
+  const box = document.createElement('pre');
+  box.id = 'debugBox';
+  box.style.cssText = 'position:fixed;right:8px;bottom:8px;z-index:99;max-width:52ch;margin:0;' +
+    'padding:8px 10px;background:rgba(6,8,12,.88);color:#9fe1ff;border:1px solid #2b3a4a;' +
+    'border-radius:8px;font:11px/1.5 ui-monospace,Menlo,monospace;white-space:pre-wrap;pointer-events:none';
+  document.body.appendChild(box);
+
+  let pointerEvents = 0;
+  window.addEventListener('pointermove', () => { pointerEvents++; }, { capture: true, passive: true });
+
+  setInterval(() => {
+    const stage = stageEl();
+    const stack = document.querySelector('.ctl-stack');
+    const wrap = document.querySelector('.video-wrap');
+    const cs = stack ? getComputedStyle(stack) : null;
+    const wr = wrap ? wrap.getBoundingClientRect() : null;
+    const sr = stack ? stack.getBoundingClientRect() : null;
+    const fs = fullscreenElement();
+    const rect = (r) => (r ? Math.round(r.top) + '~' + Math.round(r.bottom) : '—');
+    box.textContent = [
+      'UI ' + UI_REV + '　（这一行告诉你浏览器跑的是哪一版界面）',
+      '指针事件 ' + pointerEvents + ' 次　视口 ' + window.innerWidth + '×' + window.innerHeight,
+      '全屏元素 ' + (fs ? (fs.className || fs.tagName) : '（无）'),
+      'stage class = "' + (stage ? stage.className : '?') + '"',
+      '控制条 opacity=' + (cs ? cs.opacity : '—') + ' visibility=' + (cs ? cs.visibility : '—') +
+        ' pointer-events=' + (cs ? cs.pointerEvents : '—'),
+      '控制条 y ' + rect(sr) + '　画面 y ' + rect(wr) + '　（数值应落在画面里）',
+      'video paused=' + video.paused + ' readyState=' + video.readyState,
+    ].join('\n');
+  }, 500);
+}
+
 function boot() {
   bind();
+  initDebugPanel();
   video.volume = 1;
   render();
   syncClock().then(connectStream);

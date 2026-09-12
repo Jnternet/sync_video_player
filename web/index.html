@@ -42,39 +42,41 @@
         <p class="tiny">浏览器要求一次点击才允许自动播放</p>
       </div>
 
-      <!-- 控制条 + 本机音量条：贴在画面底部、浮在画面上，不占画面高度。
-           鼠标不动一会儿就淡出，动一下鼠标/碰一下屏幕/按一下键再浮回来。
-           放在 .video-wrap 里面是为了跟着画面走（全屏时画面铺满，它就贴在屏幕底部） -->
-      <div class="ctl-stack" id="ctlStack">
-        <div class="controls">
-          <button id="playBtn" class="primary">▶ 播放</button>
-          <button id="pauseBtn">⏸ 暂停</button>
-          <button id="startBtn" title="跳回 0 秒">⏮ 开头</button>
-          <span class="time" id="timeLabel">00:00 / 00:00</span>
-          <input type="range" id="seek" min="0" max="1000" value="0" step="1" title="拖动后松手即同步跳转">
-          <select id="rateSel" title="倍速（会同步）">
-            <option value="0.5">0.5×</option>
-            <option value="0.75">0.75×</option>
-            <option value="1" selected>1×</option>
-            <option value="1.25">1.25×</option>
-            <option value="1.5">1.5×</option>
-            <option value="2">2×</option>
-          </select>
-          <button id="syncBtn" title="立即对齐到房间进度">⟲ 对齐</button>
-          <button id="fsBtn" title="全屏（进度、倍速、音量浮在画面上）">⛶ 全屏</button>
-        </div>
+    </div>
 
-        <div class="local-bar">
-          <label>🔊 音量 <input type="range" id="vol" min="0" max="100" value="100"></label>
-          <label class="check"><input type="checkbox" id="muteChk"> 静音</label>
-          <label class="check" title="可选：开启后只用变速在本机慢慢磨平偏差（不跳转、不联网）。默认关闭。">
-            <input type="checkbox" id="autoTrimChk"> 本地自动微调
-          </label>
-          <span class="note">音量与静音只在本机生效，不同步</span>
-          <span class="spacer"></span>
-          <span class="metric">时钟偏差 <b id="offsetVal">—</b></span>
-          <span class="metric">本地偏差 <b id="driftVal">—</b></span>
-        </div>
+    <!-- 控制条 + 本机音量条：浮在画面底部，不占画面高度。
+         刻意放在 .video-wrap 外面（只是同一块 .stage 里的兄弟节点）：
+         画面容器带 overflow:hidden + 圆角，视频又常常自成一个合成层，
+         浮层塞在里面时有些浏览器会把它画到视频下面（能点、看不见）。 -->
+    <div class="ctl-stack" id="ctlStack">
+      <div class="controls">
+        <button id="playBtn" class="primary">▶ 播放</button>
+        <button id="pauseBtn">⏸ 暂停</button>
+        <button id="startBtn" title="跳回 0 秒">⏮ 开头</button>
+        <span class="time" id="timeLabel">00:00 / 00:00</span>
+        <input type="range" id="seek" min="0" max="1000" value="0" step="1" title="拖动后松手即同步跳转">
+        <select id="rateSel" title="倍速（会同步）">
+          <option value="0.5">0.5×</option>
+          <option value="0.75">0.75×</option>
+          <option value="1" selected>1×</option>
+          <option value="1.25">1.25×</option>
+          <option value="1.5">1.5×</option>
+          <option value="2">2×</option>
+        </select>
+        <button id="syncBtn" title="立即对齐到房间进度">⟲ 对齐</button>
+        <button id="fsBtn" title="全屏（进度、倍速、音量浮在画面上）">⛶ 全屏</button>
+      </div>
+
+      <div class="local-bar">
+        <label>🔊 音量 <input type="range" id="vol" min="0" max="100" value="100"></label>
+        <label class="check"><input type="checkbox" id="muteChk"> 静音</label>
+        <label class="check" title="可选：开启后只用变速在本机慢慢磨平偏差（不跳转、不联网）。默认关闭。">
+          <input type="checkbox" id="autoTrimChk"> 本地自动微调
+        </label>
+        <span class="note">音量与静音只在本机生效，不同步</span>
+        <span class="spacer"></span>
+        <span class="metric">时钟偏差 <b id="offsetVal">—</b></span>
+        <span class="metric">本地偏差 <b id="driftVal">—</b></span>
       </div>
     </div>
   </section>

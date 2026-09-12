@@ -5,7 +5,7 @@
 
 use std::collections::HashMap;
 use std::net::SocketAddr;
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::net::TcpStream;
 
 const IO_BUF: usize = 64 * 1024;
@@ -14,8 +14,10 @@ const MAX_HEADER_BYTES: usize = 128 * 1024;
 /// 因此 1 MiB 已经远远够用；这也是"绝不传输整个文件"在代码层面的兜底。
 pub const MAX_BODY_BYTES: usize = 1024 * 1024;
 
-pub struct Conn {
-    pub stream: TcpStream,
+/// 一条连接的读写流。正式运行时是 `TcpStream`（默认类型参数），
+/// 单元测试里换成内存管道，这样解析逻辑不需要真的开端口。
+pub struct Conn<S = TcpStream> {
+    pub stream: S,
     pub peer: SocketAddr,
     buf: Vec<u8>,
     start: usize,
@@ -23,6 +25,7 @@ pub struct Conn {
 }
 
 /// 读取请求时的错误分类：区分"对端断开"、"请求体过大"（应回 413）与"报文非法"。
+#[derive(Debug)]
 pub enum ReadError {
     /// 对端断开或读取失败：直接关闭连接即可
     Io,
@@ -105,8 +108,8 @@ impl Response {
     }
 }
 
-impl Conn {
-    pub fn new(stream: TcpStream, peer: SocketAddr) -> Self {
+impl<S: AsyncRead + AsyncWrite + Unpin> Conn<S> {
+    pub fn new(stream: S, peer: SocketAddr) -> Self {
         Conn {
             stream,
             peer,
@@ -298,8 +301,8 @@ fn reason(status: u16) -> &'static str {
     }
 }
 
-pub async fn write_response(
-    conn: &mut Conn,
+pub async fn write_response<S: AsyncRead + AsyncWrite + Unpin>(
+    conn: &mut Conn<S>,
     resp: &Response,
     keep_alive: bool,
 ) -> std::io::Result<()> {
@@ -330,7 +333,9 @@ pub async fn write_response(
 }
 
 /// 写出 SSE 响应头。之后调用方持续写入 `data: {...}\n\n` 帧即可。
-pub async fn write_sse_headers(conn: &mut Conn) -> std::io::Result<()> {
+pub async fn write_sse_headers<S: AsyncRead + AsyncWrite + Unpin>(
+    conn: &mut Conn<S>,
+) -> std::io::Result<()> {
     let head = "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream; charset=utf-8\r\nCache-Control: no-cache, no-store\r\nX-Accel-Buffering: no\r\nAccess-Control-Allow-Origin: *\r\nConnection: close\r\n\r\n";
     conn.write_all(head.as_bytes()).await
 }
@@ -376,6 +381,23 @@ fn percent_decode(s: &str, plus_as_space: bool) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use tokio::io::DuplexStream;
+    use tokio::time::{timeout, Duration};
+
+    /// 一对内存管道：返回（服务端 Conn，客户端那一端）。
+    /// 用内存管道而不是真的 TCP，解析逻辑照样跑全，但不占端口、不受沙箱限制。
+    fn pair() -> (Conn<DuplexStream>, DuplexStream) {
+        let (server, client) = tokio::io::duplex(256 * 1024);
+        let peer: SocketAddr = "127.0.0.1:5000".parse().unwrap();
+        (Conn::new(server, peer), client)
+    }
+
+    /// 写入一段原始报文并解析出一个请求。
+    async fn parse_one(raw: &[u8]) -> Result<Option<Request>, ReadError> {
+        let (mut conn, mut client) = pair();
+        client.write_all(raw).await.unwrap();
+        conn.read_request().await
+    }
 
     #[test]
     fn percent_decoding() {
@@ -383,6 +405,182 @@ mod tests {
         assert_eq!(percent_decode("x+y", true), "x y");
         assert_eq!(percent_decode("x+y", false), "x+y");
         assert_eq!(percent_decode("%E4%B8%AD", false), "中");
+        assert_eq!(percent_decode("%e4%b8%ad", false), "中");
         assert_eq!(percent_decode("%zz", false), "%zz");
+        // % 后面不足两位时按普通字符原样保留
+        assert_eq!(percent_decode("100%", false), "100%");
+        assert_eq!(percent_decode("a%2", false), "a%2");
+    }
+
+    #[test]
+    fn reason_text_for_used_statuses() {
+        for (code, text) in [
+            (200, "OK"),
+            (204, "No Content"),
+            (400, "Bad Request"),
+            (404, "Not Found"),
+            (409, "Conflict"),
+            (413, "Payload Too Large"),
+            (500, "Internal Server Error"),
+        ] {
+            assert_eq!(reason(code), text, "状态码 {code} 的说明");
+        }
+    }
+
+    #[tokio::test]
+    async fn parses_get_with_decoded_query() {
+        let req = parse_one(
+            b"GET /api/state?room=%E7%94%B5%E5%BD%B1&client=c1&flag HTTP/1.1\r\nHost: x\r\n\r\n",
+        )
+        .await
+        .unwrap()
+        .unwrap();
+        assert_eq!(req.method, "GET");
+        assert_eq!(req.path, "/api/state");
+        assert_eq!(req.q("room").as_deref(), Some("电影"));
+        assert_eq!(req.q("client").as_deref(), Some("c1"));
+        // 没有 = 的键视为空值（浏览器偶尔会这么发）
+        assert_eq!(req.q("flag").as_deref(), Some(""));
+        assert!(req.body.is_empty());
+        assert!(req.keep_alive, "HTTP/1.1 默认 keep-alive");
+    }
+
+    #[tokio::test]
+    async fn parses_post_body_and_connection_close() {
+        let req = parse_one(
+            b"POST /api/control HTTP/1.1\r\nContent-Length: 7\r\nConnection: close\r\n\r\n{\"a\":1}",
+        )
+        .await
+        .unwrap()
+        .unwrap();
+        assert_eq!(req.method, "POST");
+        assert_eq!(req.body, b"{\"a\":1}");
+        assert!(!req.keep_alive);
+    }
+
+    #[tokio::test]
+    async fn method_is_upcased_and_http10_closes_by_default() {
+        let req = parse_one(b"get / HTTP/1.0\r\n\r\n").await.unwrap().unwrap();
+        assert_eq!(req.method, "GET");
+        assert!(!req.keep_alive);
+    }
+
+    #[tokio::test]
+    async fn pipelined_requests_share_the_buffer() {
+        let (mut conn, mut client) = pair();
+        client
+            .write_all(b"GET /api/hello HTTP/1.1\r\n\r\nGET /app.js HTTP/1.1\r\n\r\n")
+            .await
+            .unwrap();
+        let first = conn.read_request().await.unwrap().unwrap();
+        let second = conn.read_request().await.unwrap().unwrap();
+        assert_eq!(first.path, "/api/hello");
+        assert_eq!(second.path, "/app.js");
+        assert!(first.keep_alive && second.keep_alive);
+    }
+
+    #[tokio::test]
+    async fn eof_ends_the_connection() {
+        let (mut conn, client) = pair();
+        drop(client);
+        assert!(conn.read_request().await.unwrap().is_none());
+    }
+
+    #[tokio::test]
+    async fn malformed_request_line_is_reported() {
+        let err = parse_one(b"GET\r\n\r\n").await.expect_err("缺目标地址应报错");
+        assert!(matches!(err, ReadError::Malformed(_)));
+    }
+
+    #[tokio::test]
+    async fn oversized_body_is_refused_before_reading() {
+        let raw = format!(
+            "POST /api/control HTTP/1.1\r\nContent-Length: {}\r\n\r\n",
+            MAX_BODY_BYTES + 1
+        );
+        let err = parse_one(raw.as_bytes()).await.expect_err("超过 1 MiB 应拒绝");
+        assert!(matches!(err, ReadError::TooLarge));
+    }
+
+    #[tokio::test]
+    async fn oversized_headers_do_not_hang() {
+        let (mut conn, mut client) = pair();
+        let raw = vec![b'A'; MAX_HEADER_BYTES + 4096];
+        let writer = tokio::spawn(async move {
+            let _ = client.write_all(&raw).await;
+            client
+        });
+        let got = timeout(Duration::from_secs(5), conn.read_request()).await;
+        assert!(
+            matches!(got, Ok(Err(ReadError::Io))),
+            "超长请求头应尽快报错收尾"
+        );
+        drop(writer.await.unwrap());
+    }
+
+    #[tokio::test]
+    async fn expect_100_continue_is_answered() {
+        let (mut conn, mut client) = pair();
+        client
+            .write_all(b"POST /api/control HTTP/1.1\r\nContent-Length: 2\r\nExpect: 100-continue\r\n\r\n")
+            .await
+            .unwrap();
+        let reader = tokio::spawn(async move { conn.read_request().await });
+
+        let mut interim = [0u8; 25];
+        client.read_exact(&mut interim).await.unwrap();
+        assert_eq!(&interim, b"HTTP/1.1 100 Continue\r\n\r\n");
+        client.write_all(b"{}").await.unwrap();
+
+        let req = reader.await.unwrap().unwrap().unwrap();
+        assert_eq!(req.body, b"{}");
+    }
+
+    #[tokio::test]
+    async fn writes_json_response_with_required_headers() {
+        let (mut conn, mut client) = pair();
+        let resp = Response::json(200, &serde_json::json!({"ok": true}));
+        write_response(&mut conn, &resp, true).await.unwrap();
+        drop(conn);
+
+        let mut raw = Vec::new();
+        client.read_to_end(&mut raw).await.unwrap();
+        let text = String::from_utf8_lossy(&raw).into_owned();
+        assert!(text.starts_with("HTTP/1.1 200 OK\r\n"), "实际：{text:?}");
+        assert!(text.contains("Content-Type: application/json; charset=utf-8\r\n"));
+        assert!(text.contains("Content-Length: 11\r\n"));
+        assert!(text.contains("Connection: keep-alive\r\n"));
+        assert!(text.contains("Access-Control-Allow-Origin: *\r\n"));
+        assert!(text.contains("Cache-Control: no-store\r\n"));
+        assert!(text.ends_with("{\"ok\":true}"));
+    }
+
+    #[tokio::test]
+    async fn writes_413_status_line() {
+        let (mut conn, mut client) = pair();
+        write_response(&mut conn, &Response::empty(413), false)
+            .await
+            .unwrap();
+        drop(conn);
+        let mut raw = Vec::new();
+        client.read_to_end(&mut raw).await.unwrap();
+        let text = String::from_utf8_lossy(&raw).into_owned();
+        assert!(text.starts_with("HTTP/1.1 413 Payload Too Large\r\n"));
+        assert!(text.contains("Connection: close\r\n"));
+    }
+
+    #[tokio::test]
+    async fn sse_headers_disable_buffering() {
+        let (mut conn, mut client) = pair();
+        write_sse_headers(&mut conn).await.unwrap();
+        conn.write_all(b"data: {}\n\n").await.unwrap();
+        drop(conn);
+        let mut raw = Vec::new();
+        client.read_to_end(&mut raw).await.unwrap();
+        let text = String::from_utf8_lossy(&raw).into_owned();
+        assert!(text.starts_with("HTTP/1.1 200 OK\r\n"));
+        assert!(text.contains("Content-Type: text/event-stream; charset=utf-8\r\n"));
+        assert!(text.contains("X-Accel-Buffering: no\r\n"));
+        assert!(text.ends_with("data: {}\n\n"));
     }
 }

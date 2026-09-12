@@ -104,6 +104,18 @@ else
 fi
 
 echo
+echo "== 全屏控制条（浮现 / 淡出，直接加载真实 web/app.js） =="
+if command -v node > /dev/null 2>&1; then
+  if node "$ROOT/scripts/check-fullscreen.mjs" 2>&1 | sed 's/^/    /'; then
+    ok "全屏后控制条静止淡出、动一下浮回来、悬停与拖动时不淡出"
+  else
+    bad "全屏控制条行为检查未通过"
+  fi
+else
+  echo "    （无 node，跳过）"
+fi
+
+echo
 echo "== 房间控制 =="
 SET=$(curl -s -X POST -H 'Content-Type: application/json' \
   -d "{\"room\":\"$ROOM\",\"client\":\"c1\",\"name\":\"甲\",\"op\":\"set_media\",\"hash\":\"$SUM\",\"size\":$SIZE,\"name\":\"movie.mkv\",\"mode\":\"full\",\"duration_ms\":7200000}" \

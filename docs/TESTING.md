@@ -8,8 +8,8 @@
 | 单元测试 | `src/*.rs` 里的 `#[cfg(test)]` | SHA-256 向量、抽样规范、HTTP 解析、房间状态机、命令行解析 | 无（不开端口） |
 | 集成测试 | `tests/e2e.rs` | 真的启动编译出来的服务，走 HTTP / SSE / CLI 全链路 | 能监听 `127.0.0.1` |
 | wasm 测试 | `wasm/src/lib.rs` 的 `#[cfg(test)]` | 浏览器用的 C ABI 全流程、抽样计划、与主程序摘要一致 | 无（本机跑，不需要 wasm 目标） |
-| 前端检查 | `scripts/check-ui.mjs`、`scripts/check-sync-policy.mjs`、`scripts/check-wasm.mjs` | DOM 接线、同步策略（用 DOM 桩跑真实 `app.js`）、wasm vs CLI vs Node crypto | node |
-| 端到端冒烟 | `scripts/smoke.sh` | 45 项真实服务检查（静态资源、房间控制、缓冲等待、SSE、路径哈希…） | curl、jq、node |
+| 前端检查 | `scripts/check-ui.mjs`、`scripts/check-sync-policy.mjs`、`scripts/check-fullscreen.mjs`、`scripts/check-wasm.mjs` | DOM 接线、同步策略、全屏控制条浮现/淡出（后两者都用 DOM 桩跑真实 `app.js`）、wasm vs CLI vs Node crypto | node |
+| 端到端冒烟 | `scripts/smoke.sh` | 46 项真实服务检查（静态资源、房间控制、缓冲等待、SSE、路径哈希…） | curl、jq、node |
 
 ## 一条命令跑完
 
@@ -90,13 +90,19 @@ ABI 版本号、`alloc/free`、空输入与 `abc` 的向量值、`null`/0 长度
 ### 前端检查（node）
 
 - `check-ui.mjs`：`app.js` 用到的 id/class 必须都在 `index.html` 里，且 id 不重复
-  —— 这类拼写错误在浏览器里只表现为「按钮点了没反应」。
+  —— 这类拼写错误在浏览器里只表现为「按钮点了没反应」。它还顺带卡住全屏的样子：
+  全屏元素必须是 `.stage`（画面 + 控制条都进去），`.ctl-stack` 必须浮在画面底部
+  （绝对定位，不吃画面高度），`.ctl-idle` 必须有淡出规则，且 `.ctl-stack` 不能有全局样式
+  （窗口模式下控制条本来就该正常占位）。
 - `check-sync-policy.mjs`：用最小 DOM 桩加载**真实交付的 `web/app.js`**，断言心跳不会引起任何
   跳转/播放/暂停/变速，只有出现新的控制信息才允许调整。
+- `check-fullscreen.mjs`：同样加载真实的 `web/app.js`，用假定时器推进时间，断言全屏控制条
+  「静止 2.6 秒淡出 → 动鼠标/触摸/按键浮回来 → 鼠标停在控制条上或正拖进度条时不淡出 →
+  退出全屏/窗口模式下不淡出」。
 - `check-wasm.mjs`：同一个文件分别用 Node `crypto`、wasm 模块、`sync_video_player hash` 算摘要，
   整文件与抽样两种模式都必须三方一致。
 
-### 冒烟测试（45 项，`scripts/smoke.sh`）
+### 冒烟测试（46 项，`scripts/smoke.sh`）
 
 真实构建产物 + 真实进程 + curl，覆盖静态资源、CLI 哈希与 `sha256sum` 一致、
 **旧的「上传分片」接口已返回 404**、**>1 MiB 请求体被 413 拒绝**、房间控制、缓冲等待、

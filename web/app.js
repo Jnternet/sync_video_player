@@ -74,6 +74,7 @@ const S = {
   lastSignature: null,
   autoTrim: false,
   scrubbing: false,
+  fsIdleTimer: 0,
   hashing: false,
   hashCancel: false,
   wasm: null,
@@ -627,14 +628,43 @@ function render() {
 
 /* ---------------------------------------------------------------- 全屏 */
 
-// 全屏的是整块 .stage（画面 + 控制条 + 本机音量条），而不是只有画面的 .video-wrap：
+// 全屏的是整块 .stage（画面 + 浮在画面上的控制条），而不是只有画面的 .video-wrap：
 // 只全屏画面的话，进度条、倍速、音量条都在全屏之外，全屏后一个都调不了。
+// 控制条本身用绝对定位叠在画面底部，不占画面高度，靠 .ctl-idle 淡出/浮回。
+const FS_IDLE_MS = 2600;
+
 function fullscreenElement() {
   return document.fullscreenElement || document.webkitFullscreenElement || null;
 }
 
+function stageEl() {
+  return document.querySelector('.stage');
+}
+
+// 亮出控制条并停住计时器（鼠标正停在控制条上，或刚进全屏）
+function holdFullscreenControls() {
+  clearTimeout(S.fsIdleTimer);
+  const stage = stageEl();
+  if (stage) stage.classList.remove('ctl-idle');
+}
+
+// 有动静（移动鼠标/触摸/按键）就浮现控制条，然后重新开始倒计时
+function pokeFullscreenControls() {
+  holdFullscreenControls();
+  if (!fullscreenElement()) return;   // 窗口模式下控制条一直占位可见，不用淡出
+  S.fsIdleTimer = setTimeout(hideFullscreenControls, FS_IDLE_MS);
+}
+
+function hideFullscreenControls() {
+  const stage = stageEl();
+  if (!stage || !fullscreenElement()) return;
+  // 正在拖进度条就别淡出，松开手再数 2.6 秒
+  if (S.scrubbing) { S.fsIdleTimer = setTimeout(hideFullscreenControls, 500); return; }
+  stage.classList.add('ctl-idle');
+}
+
 function toggleFullscreen() {
-  const stage = document.querySelector('.stage');
+  const stage = stageEl();
   if (!stage) return;
   if (fullscreenElement()) {
     const exit = document.exitFullscreen || document.webkitExitFullscreen;   // 老 Safari 只有带前缀的
@@ -649,7 +679,14 @@ function renderFullscreenBtn() {
   const btn = $('fsBtn');
   const on = !!fullscreenElement();
   btn.textContent = on ? '⛶ 退出全屏' : '⛶ 全屏';
-  btn.title = on ? '退出全屏（Esc）' : '全屏（进度、倍速、音量一起进全屏）';
+  btn.title = on ? '退出全屏（Esc）' : '全屏（进度、倍速、音量浮在画面上）';
+}
+
+function onFullscreenChange() {
+  renderFullscreenBtn();
+  // 刚进全屏先把控制条亮出来；退出全屏就清掉淡出状态，恢复窗口模式下的一直可见
+  if (fullscreenElement()) pokeFullscreenControls();
+  else holdFullscreenControls();
 }
 
 /* -------------------------------------------------------------- 事件绑定 */
@@ -701,9 +738,17 @@ function bind() {
   });
   $('rateSel').addEventListener('change', () => op('rate', { value: Number($('rateSel').value) }));
   $('fsBtn').addEventListener('click', toggleFullscreen);
-  // 按 Esc 或浏览器自己的手势退出全屏时，按钮文案要跟着回到「全屏」
+  // 按 Esc 或浏览器自己的手势退出全屏时，按钮文案与淡出状态都要跟着恢复
   ['fullscreenchange', 'webkitfullscreenchange'].forEach((ev) =>
-    document.addEventListener(ev, renderFullscreenBtn));
+    document.addEventListener(ev, onFullscreenChange));
+  // 全屏里的控制条：动一下鼠标、碰一下屏幕或按一下键就浮出来，静止 2.6 秒淡出
+  ['mousemove', 'touchstart', 'keydown'].forEach((ev) =>
+    document.addEventListener(ev, pokeFullscreenControls, { passive: true }));
+  const stack = document.querySelector('.ctl-stack');
+  if (stack) {
+    stack.addEventListener('mouseenter', holdFullscreenControls);   // 鼠标停在控制条上不淡出
+    stack.addEventListener('mouseleave', pokeFullscreenControls);
+  }
   $('gestureBtn').addEventListener('click', async () => {
     await playLocal();
     const st = S.state;

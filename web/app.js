@@ -225,6 +225,7 @@ function applyControlState(st) {
 
   // 倍速属于控制信息，按新的控制信息设置（按住 D/→ 的临时倍速优先，松手才让位）
   v.playbackRate = S.holdRate || st.rate;
+  syncRateSelect(st.rate);   // 倍速框跟着房间走：按住快进时框里也得是 2 倍
   // 按住快进期间别人改了房间倍速：松手时按新的值还回去，别把别人的选择覆盖掉
   if (S.holdRate && st.rate !== S.holdRate) S.holdBaseRate = st.rate;
   if (v.readyState < 1) { renderPlayerInfo(); return; }
@@ -777,6 +778,17 @@ function typingTarget(t) {
     return !['checkbox', 'radio', 'button', 'submit', 'reset'].includes(type);
   }
   return t.isContentEditable === true;
+}
+
+// 倍速下拉框反映房间当前的倍速：别人改了倍速、或正按住 D/→ 快进时，框里跟着一起走。
+// 倍速不在选项里时（协议允许 0.25~4，别处可能设成 3 倍）保持原样，免得变成一个空框。
+function syncRateSelect(rate) {
+  const sel = $('rateSel');
+  if (!sel || !sel.options) return;
+  const want = String(rate);
+  for (let i = 0; i < sel.options.length; i++) {
+    if (sel.options[i].value === want) { sel.value = want; return; }
+  }
 }
 
 // 房间倍速（协议字段 rate）；还没进房间就按 1 倍算

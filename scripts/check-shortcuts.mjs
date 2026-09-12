@@ -323,6 +323,21 @@ check(rateOps().some((p) => p.body.value === 0.5), '按住期间别人把倍速�
 S.state.rate = 1;            // 回到 1 倍速，后面几项都按 1 倍速算
 video.playbackRate = 1;
 
+// 倍速下拉框要跟着房间走（不然按住快进时全场 2 倍速、框里还写着 1 倍）
+getEl('rateSel').options = ['0.5', '0.75', '1', '1.25', '1.5', '2'].map((v) => ({ value: v }));
+onState({
+  media: { hash: 'a'.repeat(64), size: 1024 }, playing: true, rate: 1.5,
+  base_pos_ms: 100000, base_srv_ms: Date.now(),
+});
+check(getEl('rateSel').value === '1.5', '房间倍速变了，控制条上的倍速框跟着显示 1.5×（不骗人）');
+onState({
+  media: { hash: 'a'.repeat(64), size: 1024 }, playing: true, rate: 3,
+  base_pos_ms: 100000, base_srv_ms: Date.now(),
+});
+check(getEl('rateSel').value === '1.5', '房间倍速不在下拉选项里时保持原样（不会变成一个空框）');
+S.state.rate = 1;
+video.playbackRate = 1;
+
 // 按住时切走窗口收不到 keyup，倍速不能留在本机和房间里
 posts.length = 0;
 keyDown('d');

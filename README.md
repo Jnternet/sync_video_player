@@ -190,7 +190,7 @@ cargo test                         # 20 个单元测试：SHA-256 NIST 向量、
 node scripts/check-ui.mjs          # 前端 DOM 接线（id/class 是否存在、是否重复）
 node scripts/check-wasm.mjs        # wasm 哈希器 vs Node crypto vs CLI（需要先构建主程序）
 node scripts/check-sync-policy.mjs # 用 DOM 桩跑真实 app.js：验证「只在收到新控制信息时对齐」
-bash scripts/smoke.sh              # 44 项端到端检查：真实起服务走完整流程
+bash scripts/smoke.sh              # 45 项端到端检查：真实起服务走完整流程
 ```
 
 `scripts/check-wasm.mjs` 会直接实例化 wasm 并比对三份结果：Node 的 `crypto`、wasm 模块、`rtest hash` CLI，

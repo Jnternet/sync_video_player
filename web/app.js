@@ -81,6 +81,7 @@ const S = {
   holdKey: null,
   holdRate: 0,
   holdTimer: 0,
+  keysOpen: false,   // 快捷键提示面板是否打开
   // float = 叠在画面底部（默认：不占位置、画面不动，bilibili 那种）；
   // slide = 贴着画面下方滑出（占一条高度，但任何环境都画得出来，浮层失效时的退路）
   barMode: localStorage.getItem('sync_video_player.bar_mode') === 'slide' ? 'slide' : 'float',
@@ -678,6 +679,8 @@ function hideControls() {
   if (!stage) return;
   // 暂停时一直留着：这时候本来就要能点播放、拖进度
   if (video.paused) return;
+  // 快捷键提示面板开着时也别藏（面板是 .stage 的子节点，藏了连指针一起消失）
+  if (S.keysOpen) return;
   // 正在拖进度条就别淡出，松开手再数 2.6 秒
   if (S.scrubbing) { S.ctlIdleTimer = setTimeout(hideControls, 500); return; }
   stage.classList.add('ctl-idle');
@@ -748,7 +751,7 @@ function onFullscreenChange() {
 }
 
 /* --------------------------------------------------------- 键盘快捷键 */
-/* F 全屏 / W S ↑ ↓ 音量 / A D ← → 跳转 5 秒 / 按住 D → 本机 2 倍速快进。
+/* Q 面板 / F 全屏 / W S ↑ ↓ 音量 / A D ← → 跳转 5 秒 / 按住 D → 本机 2 倍速快进。
  * 输入框、下拉框、滑块里都不抢键：那些控件里的方向键有原生含义（移动光标、换选项、拖滑块）。 */
 
 const SEEK_STEP_MS = 5000;     // A/D 或 ←/→ 一次移动的时长
@@ -844,7 +847,7 @@ function cancelHoldScan() {
 // 认这几个键，返回规范化后的小写名字；其它键返回 null，原样交给浏览器
 function shortcutKey(e) {
   const k = e && e.key ? String(e.key).toLowerCase() : '';
-  if (k === 'f' || k === 'w' || k === 's' || k === 'a' || k === 'd') return k;
+  if (k === 'q' || k === 'f' || k === 'w' || k === 's' || k === 'a' || k === 'd' || k === 'escape') return k;
   if (k === 'arrowup' || k === 'arrowdown' || k === 'arrowleft' || k === 'arrowright') return k;
   return null;
 }
@@ -853,8 +856,11 @@ function onShortcutDown(e) {
   if (typingTarget(e.target)) return;
   const k = shortcutKey(e);
   if (!k) return;
+  // Esc 不拦：全屏时浏览器还要用它退出全屏，我们只顺手把提示面板关掉
+  if (k === 'escape') { toggleKeysPanel(false); return; }
   if (e.preventDefault) e.preventDefault();   // 方向键别去滚页面、别去动焦点上的滑块
   if (e.repeat) return;                       // 长按产生的自动重复不算新的一次按键
+  if (k === 'q') { toggleKeysPanel(); return; }
   if (k === 'f') { toggleFullscreen(); return; }
   if (k === 'w' || k === 'arrowup') { bumpVolume(1); return; }
   if (k === 's' || k === 'arrowdown') { bumpVolume(-1); return; }
@@ -865,6 +871,16 @@ function onShortcutDown(e) {
 function onShortcutUp(e) {
   const k = shortcutKey(e);
   if (k === 'd' || k === 'arrowright') endHoldScan(k);
+}
+
+/* 快捷键提示面板（Q 或顶栏「⌨ 快捷键」开关）。它在 DOM 里是 .stage 的子节点，
+ * 所以全屏时也跟着进全屏——否则全屏下按 Q 会什么都看不到。 */
+function toggleKeysPanel(show) {
+  const open = show === undefined ? !S.keysOpen : !!show;
+  S.keysOpen = open;
+  const el = $('keysOverlay');
+  if (el) el.classList.toggle('hidden', !open);
+  pokeControls();
 }
 
 /* -------------------------------------------------------------- 事件绑定 */
@@ -933,6 +949,11 @@ function bind() {
   window.addEventListener('keydown', onShortcutDown, { capture: true });
   window.addEventListener('keyup', onShortcutUp, { capture: true });
   window.addEventListener('blur', cancelHoldScan);   // 切走窗口时兜底：别把 2 倍速留在那儿
+  $('helpBtn').addEventListener('click', () => toggleKeysPanel());
+  $('keysCloseBtn').addEventListener('click', () => toggleKeysPanel(false));
+  $('keysOverlay').addEventListener('click', (e) => {
+    if (e.target === $('keysOverlay')) toggleKeysPanel(false);   // 点面板外那层暗背景也关掉
+  });
   video.addEventListener('play', pokeControls);   // 暂停时留着控制条，恢复播放后重新计时
 
   // 控制条显示方式：浮层 <-> 停靠常显（后者是浮层画不出来时的兜底），选择记在 localStorage

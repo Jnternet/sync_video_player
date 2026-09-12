@@ -1,9 +1,10 @@
 // 键盘快捷键：用最小 DOM 桩加载真实交付的 web/app.js，断言
-//   1) F 全屏 / 退出全屏（全屏的是 .stage）
-//   2) W/S/↑/↓ 音量 ±10%，音量 ≤10% 时改成 ±2%，且只在本机（不发请求）
-//   3) A/D/←/→ 后退/前进 5 秒，并跟拖进度条一样把 seek 发给房间
-//   4) 按住 D/→：不到 0.2 秒算单击（+5 秒）；超过 0.2 秒进 2 倍速、松开回房间倍速，全程不发请求
-//   5) 输入框里打字不吃快捷键；长按的自动重复不算新的一次按键
+//   1) Q 开关快捷键提示面板（顶栏按钮、关闭按钮、点暗背景、Esc 都能关），面板开着时控制条不淡出
+//   2) F 全屏 / 退出全屏（全屏的是 .stage）
+//   3) W/S/↑/↓ 音量 ±10%，音量 ≤10% 时改成 ±2%，且只在本机（不发请求）
+//   4) A/D/←/→ 后退/前进 5 秒，并跟拖进度条一样把 seek 发给房间
+//   5) 按住 D/→：不到 0.2 秒算单击（+5 秒）；超过 0.2 秒进 2 倍速、松开回房间倍速，全程不发请求
+//   6) 输入框里打字不吃快捷键；长按的自动重复不算新的一次按键
 // 时间用假定时器推进，不真的等 0.2 秒；跑的是交付给浏览器的那份文件。
 import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
@@ -89,6 +90,7 @@ Object.defineProperty(video, 'playbackRate', {
 });
 
 const stage = getEl('stage');
+const keysOverlay = getEl('keysOverlay');
 
 let fullscreenEl = null;
 let requestedOn = null;
@@ -157,10 +159,10 @@ const sandbox = {
 };
 sandbox.globalThis = sandbox;
 
-const exposed = src + '\n;globalThis.__api = { S, bind };\n';
+const exposed = src + '\n;globalThis.__api = { S, bind, CTRL_IDLE_MS };\n';
 vm.createContext(sandbox);
 vm.runInContext(exposed, sandbox);
-const { S, bind } = sandbox.__api;
+const { S, bind, CTRL_IDLE_MS } = sandbox.__api;
 
 bind();   // 真实页面里由 DOMContentLoaded 触发
 
@@ -174,6 +176,30 @@ const seeks = () => posts.filter((p) => p.body.op === 'seek');
 
 /* ------------------------------------------------------- 场景 */
 console.log('键盘快捷键检查：');
+
+/* ---- Q：快捷键提示面板 ---- */
+keyDown('q');
+check(S.keysOpen, '按 Q 打开快捷键提示面板');
+check(!keysOverlay.classes.has('hidden'), '面板元素去掉 .hidden（真的显示出来）');
+keyDown('q');
+check(!S.keysOpen && keysOverlay.classes.has('hidden'), '再按一次 Q 关掉面板');
+
+getEl('helpBtn').fire('click');
+check(S.keysOpen, '顶栏「⌨ 快捷键」按钮也能打开面板（不然没人知道有快捷键）');
+getEl('keysCloseBtn').fire('click');
+check(!S.keysOpen, '面板上的「关闭」按钮能关掉');
+getEl('helpBtn').fire('click');
+keysOverlay.fire('click');
+check(!S.keysOpen, '点面板外那层暗背景也能关掉');
+keyDown('q');
+keyDown('Escape');
+check(!S.keysOpen, 'Esc 也能关掉面板（全屏时浏览器还会自己退出全屏）');
+
+// 面板是 .stage 的子节点，别让控制条倒计时把指针一起藏了
+keyDown('q');
+advance(CTRL_IDLE_MS * 3);
+check(!stage.classes.has('ctl-idle'), '面板开着时控制条不淡出（否则连指针一起消失）');
+keyDown('q');
 
 /* ---- F：全屏 / 退出全屏 ---- */
 keyDown('f');
@@ -287,6 +313,8 @@ check(playbackRate === 1 && posts.length === 0, '自动重复的 D 既不进 2 �
 
 /* ---- 输入框里打字不吃快捷键 ---- */
 const textarea = { tagName: 'TEXTAREA', isContentEditable: false };
+keyDown('q', { target: textarea });
+check(!S.keysOpen, '在输入框里打 q 不会弹出面板（文字要能正常输入）');
 video.volume = 0.5;
 keyDown('w', { target: textarea });
 check(Math.abs(video.volume - 0.5) < 1e-9, '在输入框里按 w 不改音量');

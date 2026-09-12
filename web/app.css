@@ -325,3 +325,50 @@ aside { display: flex; flex-direction: column; gap: 12px; }
   -webkit-transform: translateZ(0);
 }
 .stage.ctl-float .video-wrap { isolation: isolate; }
+
+/* ---- 键盘快捷键提示面板（Q 开关）---- */
+/* 钉在视口中央，所以窗口模式和全屏模式看到的是同一块面板（面板在 .stage 里，
+   全屏时只有 .stage 的子树会被渲染）。 */
+.keys-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: rgba(6, 8, 12, .72);
+  backdrop-filter: blur(3px);
+  -webkit-backdrop-filter: blur(3px);
+}
+.keys-overlay.hidden { display: none; }
+.keys-panel {
+  width: 100%;
+  max-width: 560px;
+  max-height: 82vh;
+  overflow: auto;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 16px 18px;
+  box-shadow: 0 18px 50px rgba(0, 0, 0, .55);
+  text-align: left;
+}
+.keys-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 12px; }
+.keys-head b { font-size: 15px; }
+.keys-list { list-style: none; margin: 0 0 10px; padding: 0; display: flex; flex-direction: column; gap: 9px; }
+.keys-list li { display: flex; gap: 12px; align-items: baseline; font-size: 13px; }
+.keys-list .key-combo { flex: 0 0 152px; color: var(--dim); }
+kbd {
+  display: inline-block;
+  min-width: 22px;
+  margin-right: 3px;
+  padding: 1px 6px;
+  background: #0d1015;
+  border: 1px solid var(--line);
+  border-bottom-width: 2px;
+  border-radius: 5px;
+  font: 12px/1.5 ui-monospace, Menlo, Consolas, monospace;
+  text-align: center;
+  color: var(--text);
+}

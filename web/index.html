@@ -18,6 +18,7 @@
     <button class="ghost" id="copyLinkBtn">复制邀请链接</button>
     <button class="ghost" id="barModeBtn" title="控制条叠在画面底部（默认），或从画面下方滑出">控制条：浮层</button>
     <span class="pill" id="barStatePill" title="控制条此刻的状态">控制条 显示中</span>
+    <button class="ghost" id="helpBtn" title="键盘快捷键（按 Q 也可以开关）">⌨ 快捷键</button>
     <button class="ghost" id="diagBtn" title="显示诊断信息（等价于在地址后加 ?debug=1）">诊断</button>
   </div>
 </header>
@@ -80,6 +81,26 @@
         <span class="spacer"></span>
         <span class="metric">时钟偏差 <b id="offsetVal">—</b></span>
         <span class="metric">本地偏差 <b id="driftVal">—</b></span>
+      </div>
+    </div>
+
+    <!-- 键盘快捷键提示面板（Q 或顶栏「⌨ 快捷键」开关，默认隐藏）。
+         刻意放在 .stage 里面而不是 body 末尾：全屏时只有全屏元素的子树会被渲染，
+         放在外面的话全屏下按 Q 什么都看不到。 -->
+    <div class="keys-overlay hidden" id="keysOverlay">
+      <div class="keys-panel" role="dialog" aria-label="键盘快捷键">
+        <div class="keys-head">
+          <b>键盘快捷键</b>
+          <button class="ghost" id="keysCloseBtn" title="关闭面板（Q / Esc）">关闭（Q）</button>
+        </div>
+        <ul class="keys-list">
+          <li><span class="key-combo"><kbd>Q</kbd></span><span>显示 / 隐藏这个面板</span></li>
+          <li><span class="key-combo"><kbd>F</kbd></span><span>全屏 / 退出全屏</span></li>
+          <li><span class="key-combo"><kbd>W</kbd><kbd>S</kbd> / <kbd>↑</kbd><kbd>↓</kbd></span><span>音量 + / −（每次 10%；音量 ≤10% 时每次 2%）</span></li>
+          <li><span class="key-combo"><kbd>A</kbd><kbd>D</kbd> / <kbd>←</kbd><kbd>→</kbd></span><span>后退 / 前进 5 秒（跟拖进度条一样，会同步给房间里所有人）</span></li>
+          <li><span class="key-combo">按住 <kbd>D</kbd> / <kbd>→</kbd></span><span>超过 0.2 秒进入 2 倍速快进，松开恢复原速（只在本机）</span></li>
+        </ul>
+        <p class="note">音量、静音、按住快进只在本机生效，不会同步；输入框里打字时快捷键不生效。</p>
       </div>
     </div>
   </section>

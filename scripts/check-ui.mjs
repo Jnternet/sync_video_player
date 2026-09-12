@@ -200,6 +200,25 @@ if (!/mouseenter', holdControls/.test(js)) {
   bad++;
 }
 
+// 快捷键提示面板（Q 开关）：必须在 .stage 里、默认收起、顶栏有入口。
+// 全屏时只有全屏元素（.stage）的子树会被渲染，面板放到 body 末尾的话全屏下按 Q 什么都看不到。
+if (!/id="keysOverlay"/.test(stageHtml)) {
+  console.log('[FAIL] 快捷键提示面板（#keysOverlay）不在 .stage 里：全屏时按 Q 看不到面板');
+  bad++;
+}
+if (!/class="keys-overlay hidden"/.test(html)) {
+  console.log('[FAIL] 快捷键提示面板默认不是收起的（.keys-overlay 上要有 hidden）：一进页面就挡住画面');
+  bad++;
+}
+if (!/id="helpBtn"/.test(html) || !/\$\('helpBtn'\)\.addEventListener\('click'/.test(js)) {
+  console.log('[FAIL] 顶栏缺少「⌨ 快捷键」入口按钮：不点一下没人知道有快捷键');
+  bad++;
+}
+if (!/\.keys-overlay\.hidden\s*\{[^}]*display:\s*none/.test(cssCode)) {
+  console.log('[FAIL] app.css 缺少 .keys-overlay.hidden 的 display:none：收起的面板会一直挡着画面');
+  bad++;
+}
+
 console.log(
   `检查了 ${usedIds.size} 个 id、${usedClasses.size} 个 class（HTML 共 ${htmlIds.size} 个 id）`,
 );

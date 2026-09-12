@@ -37,7 +37,7 @@
 不要只推代码：用户是直接下载二进制来用的。
 
 ```bash
-cargo test && bash scripts/smoke.sh          # 先确认测试全绿
+bash scripts/test.sh                         # 先确认测试全绿（单元+集成+前端+wasm+冒烟）
 bash scripts/package-release.sh              # 构建 + 打包到 dist/
 bash scripts/package-release.sh --publish    # 上传到 GitHub Release
 ```

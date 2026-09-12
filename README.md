@@ -193,8 +193,8 @@ bash scripts/test.sh --quick   # 提交前够用：不开端口、不构建 rele
 也可以按层单独跑：
 
 ```bash
-cargo test                              # 66 项：53 个单元测试 + 13 个端到端集成测试（会真的起服务）
-cargo test --manifest-path wasm/Cargo.toml  # 15 项：浏览器里那套 C ABI + 共用源码的摘要测试
+cargo test                              # 71 项：58 个单元测试 + 13 个端到端集成测试（会真的起服务）
+cargo test --manifest-path wasm/Cargo.toml  # 20 项：浏览器里那套 C ABI + 共用源码的摘要测试
 node scripts/check-ui.mjs               # 前端 DOM 接线（id/class 是否存在、是否重复）
 node scripts/check-sync-policy.mjs      # 用 DOM 桩跑真实 app.js：验证「只在收到新控制信息时对齐」
 node scripts/check-wasm.mjs             # wasm 哈希器 vs Node crypto vs CLI（需要先构建主程序）
@@ -202,8 +202,9 @@ bash scripts/smoke.sh                   # 45 项端到端检查：真实起服�
 ```
 
 `tests/e2e.rs` 不 mock 服务端：每个用例真的启动编译出来的二进制，用标准库自己发 HTTP/SSE 请求，
-覆盖内嵌资源与 wasm 产物、路由与 413/404/400 边界、房间协议（409 哈希不一致、缓冲等待、重置）、
-SSE 心跳签名不变、`hash` 命令行与 OpenSSL 摘要一致、`/api/hash/path` 的大小校验。
+覆盖内嵌资源与 wasm 产物、路由与 413/404/400 边界、**旧的五个上传接口全部 404**、
+房间协议（409 哈希不一致、缓冲等待、重置）、SSE 心跳签名不变、
+`hash` 命令行与 OpenSSL 摘要一致、`/api/hash/path` 的大小校验。
 
 `scripts/check-wasm.mjs` 会直接实例化 wasm 并比对三份结果：Node 的 `crypto`、wasm 模块、`sync_video_player hash` CLI，
 整文件与抽样两种模式都比对——这正是「前后端算法不许漂移」的护栏。

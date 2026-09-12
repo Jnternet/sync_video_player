@@ -41,11 +41,12 @@ bash scripts/test.sh --help
 
 ## 各层都在测什么
 
-### 单元测试（53 项，`cargo test --bin sync_video_player`）
+### 单元测试（58 项，`cargo test --bin sync_video_player`）
 
 - `src/sha256.rs`：NIST/FIPS 180-4 官方向量（空串、`abc`、448 位块、100 万个 `a`）、
-  任意分片不影响摘要、`finalize_reset` 复用。
+  任意分片不影响摘要、`finalize_reset` 复用、`sha256_hex` 便捷函数、十六进制哈希格式校验。
 - `src/hashspec.rs`：小文件退化成整文件、采样点排序且在文件内、抽样摘要可重复且对改动敏感。
+  还覆盖抽样阈值边界（正好 8 MiB / 刚超 8 MiB）、模式名解析、头部把长度与采样点表绑进摘要。
   这份实现与 wasm **共用同一份源码**，所以这里的断言对两条路径都成立。
 - `src/http.rs`：请求行/查询参数百分号解码、keep-alive 与管线化、HTTP/1.0 默认关闭、
   非法请求行、超过 1 MiB 的请求体（413 闸门）、超长请求头不挂起、`Expect: 100-continue`、
@@ -66,7 +67,8 @@ bash scripts/test.sh --help
 - 内嵌资源：首页/JS/CSS 的类型与内容、`/favicon.ico`、**内嵌 wasm 与仓库产物逐字节一致**；
 - `/api/hello` 的 `wasm_abi`（前端靠它判断 ABI）、`/api/state` 的参与者列表与 `matches` 标记；
 - keep-alive 上连发两个请求、`OPTIONS` 预检 204、未知路径 404、坏 JSON 400、
-  `Content-Length` 超 1 MiB → **413**；
+  `Content-Length` 超 1 MiB → **413**、`/api/hash/begin|chunk|sample|finish|cancel`
+  **五个旧上传接口全部 404**（视频字节不出本机这条硬规则）；
 - 房间协议：设媒体、同哈希加入、**不同哈希 409 + `hash_mismatch` + `expected` 信息**、
   播放/跳转/倍速（含钳制）、暂停、重置房间、未知指令 400；
 - 缓冲等待：有人缓冲暂停全场（`waiting_for` 列出是谁）→ 就绪后自动续播 → 关掉 `wait_for_buffer` 后不再打断；
@@ -75,7 +77,7 @@ bash scripts/test.sh --help
   改动中间一个字节整文件摘要必变、缺文件退出码非 0、参数错误退出码 2；
 - `/api/hash/path`：与房间媒体匹配、大小不匹配被拒、缺 `path` 与不存在的路径都返回 400。
 
-### wasm 测试（15 项，`cargo test --manifest-path wasm/Cargo.toml`）
+### wasm 测试（20 项，`cargo test --manifest-path wasm/Cargo.toml`）
 
 被测的是**导出给浏览器的那些 C 函数**，在本机（x86）上直接调用：
 ABI 版本号、`alloc/free`、空输入与 `abc` 的向量值、`null`/0 长度调用被忽略、

@@ -221,3 +221,35 @@ aside { display: flex; flex-direction: column; gap: 12px; }
 .notes { margin: 0; padding-left: 18px; color: var(--dim); font-size: 12px; }
 .notes li { margin-bottom: 5px; }
 .notes b { color: var(--text); }
+
+/* ---- 全屏：整块舞台进去，控制条跟着一起 ---- */
+/* 以前只全屏 .video-wrap（只有画面），进度条/倍速/音量条留在全屏之外，全屏后就调不了。 */
+.stage:fullscreen,
+.stage:-webkit-full-screen {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+  gap: 0;
+  padding: 0;
+  background: #000;
+  overflow: hidden;
+}
+.stage:fullscreen .video-wrap,
+.stage:-webkit-full-screen .video-wrap {
+  flex: 1 1 auto;
+  min-height: 0;
+  aspect-ratio: auto;
+  border: 0;
+  border-radius: 0;
+}
+.stage:fullscreen .controls,
+.stage:fullscreen .local-bar,
+.stage:-webkit-full-screen .controls,
+.stage:-webkit-full-screen .local-bar {
+  margin: 0;
+  padding: 10px 16px;
+  background: var(--panel);
+}
+.stage:fullscreen .controls,
+.stage:-webkit-full-screen .controls { border-top: 1px solid var(--line); }

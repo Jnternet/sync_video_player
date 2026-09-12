@@ -622,6 +622,34 @@ function render() {
   renderClients();
   renderGate();
   renderPlayerInfo();
+  renderFullscreenBtn();
+}
+
+/* ---------------------------------------------------------------- 全屏 */
+
+// 全屏的是整块 .stage（画面 + 控制条 + 本机音量条），而不是只有画面的 .video-wrap：
+// 只全屏画面的话，进度条、倍速、音量条都在全屏之外，全屏后一个都调不了。
+function fullscreenElement() {
+  return document.fullscreenElement || document.webkitFullscreenElement || null;
+}
+
+function toggleFullscreen() {
+  const stage = document.querySelector('.stage');
+  if (!stage) return;
+  if (fullscreenElement()) {
+    const exit = document.exitFullscreen || document.webkitExitFullscreen;   // 老 Safari 只有带前缀的
+    if (exit) exit.call(document);
+    return;
+  }
+  const enter = stage.requestFullscreen || stage.webkitRequestFullscreen;
+  if (enter) enter.call(stage);
+}
+
+function renderFullscreenBtn() {
+  const btn = $('fsBtn');
+  const on = !!fullscreenElement();
+  btn.textContent = on ? '⛶ 退出全屏' : '⛶ 全屏';
+  btn.title = on ? '退出全屏（Esc）' : '全屏（进度、倍速、音量一起进全屏）';
 }
 
 /* -------------------------------------------------------------- 事件绑定 */
@@ -672,11 +700,10 @@ function bind() {
     op('seek', { value: Math.round(ms) });
   });
   $('rateSel').addEventListener('change', () => op('rate', { value: Number($('rateSel').value) }));
-  $('fsBtn').addEventListener('click', () => {
-    const wrap = document.querySelector('.video-wrap');
-    if (document.fullscreenElement) document.exitFullscreen();
-    else if (wrap.requestFullscreen) wrap.requestFullscreen();
-  });
+  $('fsBtn').addEventListener('click', toggleFullscreen);
+  // 按 Esc 或浏览器自己的手势退出全屏时，按钮文案要跟着回到「全屏」
+  ['fullscreenchange', 'webkitfullscreenchange'].forEach((ev) =>
+    document.addEventListener(ev, renderFullscreenBtn));
   $('gestureBtn').addEventListener('click', async () => {
     await playLocal();
     const st = S.state;

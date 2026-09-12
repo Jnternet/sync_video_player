@@ -1,6 +1,6 @@
 [package]
 name = "sync_video_player"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 description = "局域网同步播放器：Rust 单文件后端 + 浏览器前端，只同步控制信息"
 
@@ -26,4 +26,3 @@ opt-level = 3
 lto = "thin"
 codegen-units = 1
 strip = true
-

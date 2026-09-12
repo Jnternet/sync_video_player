@@ -186,12 +186,24 @@ cargo build --release              # 产物：target/release/sync_video_player
 ## 验证
 
 ```bash
-cargo test                         # 20 个单元测试：SHA-256 NIST 向量、状态机、采样计划、参数解析
-node scripts/check-ui.mjs          # 前端 DOM 接线（id/class 是否存在、是否重复）
-node scripts/check-wasm.mjs        # wasm 哈希器 vs Node crypto vs CLI（需要先构建主程序）
-node scripts/check-sync-policy.mjs # 用 DOM 桩跑真实 app.js：验证「只在收到新控制信息时对齐」
-bash scripts/smoke.sh              # 45 项端到端检查：真实起服务走完整流程
+bash scripts/test.sh           # 一条命令跑完全部测试（单元 + 集成 + 前端 + wasm + 冒烟）
+bash scripts/test.sh --quick   # 提交前够用：不开端口、不构建 release
 ```
+
+也可以按层单独跑：
+
+```bash
+cargo test                              # 66 项：53 个单元测试 + 13 个端到端集成测试（会真的起服务）
+cargo test --manifest-path wasm/Cargo.toml  # 15 项：浏览器里那套 C ABI + 共用源码的摘要测试
+node scripts/check-ui.mjs               # 前端 DOM 接线（id/class 是否存在、是否重复）
+node scripts/check-sync-policy.mjs      # 用 DOM 桩跑真实 app.js：验证「只在收到新控制信息时对齐」
+node scripts/check-wasm.mjs             # wasm 哈希器 vs Node crypto vs CLI（需要先构建主程序）
+bash scripts/smoke.sh                   # 45 项端到端检查：真实起服务走完整流程
+```
+
+`tests/e2e.rs` 不 mock 服务端：每个用例真的启动编译出来的二进制，用标准库自己发 HTTP/SSE 请求，
+覆盖内嵌资源与 wasm 产物、路由与 413/404/400 边界、房间协议（409 哈希不一致、缓冲等待、重置）、
+SSE 心跳签名不变、`hash` 命令行与 OpenSSL 摘要一致、`/api/hash/path` 的大小校验。
 
 `scripts/check-wasm.mjs` 会直接实例化 wasm 并比对三份结果：Node 的 `crypto`、wasm 模块、`sync_video_player hash` CLI，
 整文件与抽样两种模式都比对——这正是「前后端算法不许漂移」的护栏。
@@ -202,6 +214,15 @@ bash scripts/smoke.sh              # 45 项端到端检查：真实起服务走�
 `scripts/smoke.sh` 覆盖：静态资源、CLI 哈希与 `sha256sum` 一致、wasm 由服务端正确提供、**旧上传接口已返回 404**、
 **>1 MiB 请求体被 413 拒绝**、房间媒体设定、哈希不一致被 409 拒绝、播放/跳转/倍速、缓冲等待、SSE 推送、
 **空闲期间状态签名不变 / 操作后签名变化**、服务端路径哈希、重置房间，并在其中调用上面两个 Node 检查。
+
+### 测试会自动跑
+
+- **CI**（`.github/workflows/ci.yml`）：push 到 `main`、开 PR 时自动跑全套，并检查
+  `web/sync_video_player_hash.wasm` 与 wasm 源码是否一致（忘了重新构建就会红）。
+- **pre-push 钩子**（`.githooks/pre-push`）：本地推送前自动跑测试，没过就拦住；
+  新 clone 启用一次 `git config core.hooksPath .githooks`，急用可 `SKIP_TESTS=1 git push`。
+
+测试分层、每层覆盖了什么、怎么加新测试，见 [docs/TESTING.md](docs/TESTING.md)。
 
 ## 构建
 
@@ -252,9 +273,15 @@ src/sha256.rs         纯 Rust 增量 SHA-256（含 NIST 测试向量）
 src/hashspec.rs       采样计划与抽样摘要编码（主程序与 wasm 共用同一份源码）
 wasm/                 浏览器内运行的 Rust 哈希器（cdylib → wasm32-unknown-unknown）
 web/                  内嵌进二进制的网页前端 + 构建出的 sync_video_player_hash.wasm
+tests/e2e.rs          端到端集成测试（真启动服务，走 HTTP/SSE/CLI）
+scripts/test.sh       一键跑完所有测试
 scripts/smoke.sh      端到端冒烟测试
 scripts/check-wasm.mjs wasm 与 CLI 的哈希一致性校验
+.github/workflows/     CI：push / PR 自动跑测试并检查 wasm 产物
+.githooks/pre-push     推送前自动跑测试（需启用 core.hooksPath）
 docs/DESIGN.md        设计文档（含协议与取舍）
+docs/TESTING.md       测试说明（分层、覆盖范围、自动化）
 ```
 
-更完整的设计说明、协议细节与取舍分析见 [docs/DESIGN.md](docs/DESIGN.md)。
+更完整的设计说明、协议细节与取舍分析见 [docs/DESIGN.md](docs/DESIGN.md)，
+测试怎么跑、每层测什么见 [docs/TESTING.md](docs/TESTING.md)。

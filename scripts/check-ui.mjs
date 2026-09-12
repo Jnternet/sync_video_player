@@ -113,9 +113,20 @@ if (!/\.stage\.is-fs\.ctl-idle \.ctl-stack\s*\{[\s\S]{0,200}?pointer-events:\s*n
   bad++;
 }
 // 浮层模式：视频会自成合成层，浮层必须提层，而且这条只能是显式切过去的可选模式
-const floatRule = (cssCode.match(/\.stage\.ctl-float \.ctl-stack\s*\{[\s\S]{0,400}?\}/) || [''])[0];
+const floatRule = (cssCode.match(/\.stage\.ctl-float \.ctl-stack\s*\{[\s\S]{0,900}?\}/) || [''])[0];
 if (!/position:\s*absolute/.test(floatRule) || !/transform:\s*translateZ\(0\)/.test(floatRule)) {
   console.log('[FAIL] app.css 里浮层模式（.stage.ctl-float .ctl-stack）必须是绝对定位 + translateZ(0)');
+  bad++;
+}
+// 光提层还不够：视频可能被送进硬件叠加层（显示控制器直接扫描输出），
+// 那样网页浮层会被整个盖住。这几条是用来逼合成器把视频画回页面纹理的。
+if (!/backdrop-filter/.test(floatRule)) {
+  console.log('[FAIL] app.css 里浮层没有 backdrop-filter：合成器可能仍然把视频走硬件叠加层，浮层看不见');
+  bad++;
+}
+const floatVideo = (cssCode.match(/\.stage\.ctl-float video\s*\{[\s\S]{0,300}?\}/) || [''])[0];
+if (!/opacity:\s*\.?0?\.\d+/.test(floatVideo) || !/border-radius/.test(floatVideo) || !/transform:\s*translateZ\(0\)/.test(floatVideo)) {
+  console.log('[FAIL] app.css 缺少「把视频踢出硬件叠加层」的处理（.stage.ctl-float video 需要 opacity<1 + border-radius + translateZ(0)）');
   bad++;
 }
 if (!/\.stage\.ctl-blocked \.ctl-stack/.test(cssCode)) {

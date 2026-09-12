@@ -12,7 +12,7 @@
 const $ = (id) => document.getElementById(id);
 const video = $('video');
 // 界面版本标记：加 ?debug=1 会显示出来，用来确认浏览器里跑的到底是哪一版前端
-const UI_REV = 'r9-2026-09-12';
+const UI_REV = 'r10-2026-09-12';
 
 const fmtTime = (ms) => {
   if (!isFinite(ms) || ms < 0) ms = 0;
@@ -77,8 +77,9 @@ const S = {
   autoTrim: false,
   scrubbing: false,
   ctlIdleTimer: 0,
-  // slide = 贴着画面下方滑出（默认，任何环境都画得出来）；float = 叠在画面上（bilibili 那种）
-  barMode: localStorage.getItem('sync_video_player.bar_mode') === 'float' ? 'float' : 'slide',
+  // float = 叠在画面底部（默认：不占位置、画面不动，bilibili 那种）；
+  // slide = 贴着画面下方滑出（占一条高度，但任何环境都画得出来，浮层失效时的退路）
+  barMode: localStorage.getItem('sync_video_player.bar_mode') === 'slide' ? 'slide' : 'float',
   debugBox: null,
   hashing: false,
   hashCancel: false,

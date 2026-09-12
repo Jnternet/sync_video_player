@@ -101,6 +101,17 @@ if (!/\.stage:not\(\.ctl-idle\) \.ctl-stack\s*\{[\s\S]{0,300}?max-height:\s*[1-9
   console.log('[FAIL] app.css 缺少「有活动时把控制条展开」的规则（.stage:not(.ctl-idle) .ctl-stack）');
   bad++;
 }
+// 全屏：控制条的位置必须常驻预留（高度固定），否则它一出现就把画面挤上去，
+// 用户调进度时画面跟着跳 —— 这是明确提过的验收点。
+const fsStrip = (cssCode.match(/\.stage\.is-fs:not\(\.ctl-float\) \.ctl-stack\s*\{[\s\S]{0,300}?\}/) || [''])[0];
+if (!/max-height:\s*none/.test(fsStrip) || !/padding/.test(fsStrip) || !/opacity:\s*0/.test(fsStrip)) {
+  console.log('[FAIL] app.css 里全屏滑出模式没有常驻预留控制条位置（画面会被挤动）');
+  bad++;
+}
+if (!/\.stage\.is-fs\.ctl-idle \.ctl-stack\s*\{[\s\S]{0,200}?pointer-events:\s*none/.test(cssCode)) {
+  console.log('[FAIL] app.css 里全屏收起态没有 pointer-events:none（预留区会挡住鼠标）');
+  bad++;
+}
 // 浮层模式：视频会自成合成层，浮层必须提层，而且这条只能是显式切过去的可选模式
 const floatRule = (cssCode.match(/\.stage\.ctl-float \.ctl-stack\s*\{[\s\S]{0,400}?\}/) || [''])[0];
 if (!/position:\s*absolute/.test(floatRule) || !/transform:\s*translateZ\(0\)/.test(floatRule)) {

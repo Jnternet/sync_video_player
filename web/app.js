@@ -761,11 +761,17 @@ const VOL_FINE_MAX = 10;
 const HOLD_SCAN_MS = 200;      // 按住超过 0.2 秒才算长按（不到就是单击：跳 5 秒）
 const HOLD_SCAN_RATE = 2;      // 长按时的临时倍速（只在本机，不写进协议）
 
-// 正在打字/拖滑块时不吃快捷键
+// 正在打字/拖滑块时不吃快捷键：那些控件里的字母、方向键有原生含义（移动光标、换选项、调值）。
+// 复选框和按钮里只有空格/回车有意义，字母与方向键照常走快捷键——不然点完「静音」，
+// 焦点留在复选框上，音量键会突然失灵。
 function typingTarget(t) {
   if (!t || !t.tagName) return false;
   const tag = String(t.tagName).toLowerCase();
-  if (tag === 'input' || tag === 'textarea' || tag === 'select') return true;
+  if (tag === 'textarea' || tag === 'select') return true;
+  if (tag === 'input') {
+    const type = String(t.type || 'text').toLowerCase();
+    return !['checkbox', 'radio', 'button', 'submit', 'reset'].includes(type);
+  }
   return t.isContentEditable === true;
 }
 

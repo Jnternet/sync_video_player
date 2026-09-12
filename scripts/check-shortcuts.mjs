@@ -4,7 +4,7 @@
 //   3) W/S/↑/↓ 音量 ±10%，音量 ≤10% 时改成 ±2%，且只在本机（不发请求）
 //   4) A/D/←/→ 后退/前进 5 秒，并跟拖进度条一样把 seek 发给房间
 //   5) 按住 D/→：不到 0.2 秒算单击（+5 秒）；超过 0.2 秒进 2 倍速、松开回房间倍速，全程不发请求
-//   6) 输入框里打字不吃快捷键；长按的自动重复不算新的一次按键
+//   6) 输入框/滑块里不吃快捷键、复选框与按钮上照常生效；长按的自动重复不算新的一次按键
 // 时间用假定时器推进，不真的等 0.2 秒；跑的是交付给浏览器的那份文件。
 import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
@@ -311,7 +311,7 @@ keyDown('d', { repeat: true });
 advance(500);
 check(playbackRate === 1 && posts.length === 0, '自动重复的 D 既不进 2 倍速也不跳 5 秒');
 
-/* ---- 输入框里打字不吃快捷键 ---- */
+/* ---- 输入框里打字不吃快捷键，复选框上照常生效 ---- */
 const textarea = { tagName: 'TEXTAREA', isContentEditable: false };
 keyDown('q', { target: textarea });
 check(!S.keysOpen, '在输入框里打 q 不会弹出面板（文字要能正常输入）');
@@ -323,6 +323,16 @@ posts.length = 0;
 keyDown('d', { target: textarea });
 keyUp('d', { target: textarea });
 check(Math.abs(currentTime - 100) < 1e-6 && posts.length === 0, '在输入框里按 d 不跳转（按下和松开都要放行）');
+
+video.volume = 0.5;
+currentTime = 100;
+keyDown('ArrowDown', { target: { tagName: 'INPUT', type: 'range' } });
+check(Math.abs(video.volume - 0.5) < 1e-9 && Math.abs(currentTime - 100) < 1e-6,
+  '焦点在滑块上时方向键归滑块自己（我们不抢，免得一下动两格）');
+
+video.volume = 0.5;
+keyDown('w', { target: { tagName: 'INPUT', type: 'checkbox' } });
+check(Math.abs(video.volume - 0.6) < 1e-9, '焦点在「静音」复选框上时音量键照常生效（否则点完静音音量键就失灵）');
 
 /* ---- 没对上房间时不许跳（键盘不能绕过遮罩把全场带跑）---- */
 currentTime = 100;

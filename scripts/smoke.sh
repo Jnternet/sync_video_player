@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# rtest 端到端冒烟测试：真实启动服务，用 HTTP 走完哈希 + 同步流程。
+# sync_video_player 端到端冒烟测试：真实启动服务，用 HTTP 走完哈希 + 同步流程。
 # 用法: bash scripts/smoke.sh [二进制路径]
 set -uo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-BIN="${1:-$ROOT/target/release/rtest}"
+BIN="${1:-$ROOT/target/release/sync_video_player}"
 case "$BIN" in /*) ;; *) BIN="$ROOT/$BIN" ;; esac
 PORT="${PORT:-8799}"
 ROOM="smoke"
@@ -53,7 +53,7 @@ check_eq "$(curl -s -o /dev/null -w '%{http_code}' "$BASE/nope")" "404" "未知�
 echo
 echo "== 命令行哈希（不上传） =="
 CLI_JSON=$("$BIN" hash "$WORK/movie.mkv" --json)
-check_eq "$(echo "$CLI_JSON" | jq -r .hash)" "$SUM" "rtest hash 与 sha256sum 一致"
+check_eq "$(echo "$CLI_JSON" | jq -r .hash)" "$SUM" "sync_video_player hash 与 sha256sum 一致"
 SAMPLE_JSON=$("$BIN" hash "$WORK/movie.mkv" --sample --json)
 check_eq "$(echo "$SAMPLE_JSON" | jq -r .mode)" "sample" "--sample 走抽样模式"
 check_eq "$(echo "$SAMPLE_JSON" | jq -r .hash)" "$(echo "$SAMPLE_JSON" | jq -r .hash)" "抽样哈希可重复"
@@ -71,12 +71,12 @@ check_eq "$BIGREQ_CODE" "413" "超大请求体被拒绝（413）"
 
 echo
 echo "== 本机哈希模块（Rust/WASM） =="
-check_eq "$(curl -s -o /dev/null -w '%{http_code}' "$BASE/rtest_hash.wasm")" "200" "GET /rtest_hash.wasm 返回 200"
-check_eq "$(curl -s -o /dev/null -w '%{content_type}' "$BASE/rtest_hash.wasm")" "application/wasm" "wasm 的 Content-Type 正确"
-WASM_BYTES=$(curl -s "$BASE/rtest_hash.wasm" | wc -c)
+check_eq "$(curl -s -o /dev/null -w '%{http_code}' "$BASE/sync_video_player_hash.wasm")" "200" "GET /sync_video_player_hash.wasm 返回 200"
+check_eq "$(curl -s -o /dev/null -w '%{content_type}' "$BASE/sync_video_player_hash.wasm")" "application/wasm" "wasm 的 Content-Type 正确"
+WASM_BYTES=$(curl -s "$BASE/sync_video_player_hash.wasm" | wc -c)
 if [ "$WASM_BYTES" -lt 200000 ]; then ok "wasm 体积很小（${WASM_BYTES} 字节）"; else bad "wasm 体积异常：${WASM_BYTES}"; fi
-curl -s "$BASE/rtest_hash.wasm" > "$WORK/served.wasm"
-check_eq "$(sha256sum "$WORK/served.wasm" | cut -d' ' -f1)" "$(sha256sum "$ROOT/web/rtest_hash.wasm" | cut -d' ' -f1)" "服务端提供的 wasm 与仓库产物一致"
+curl -s "$BASE/sync_video_player_hash.wasm" > "$WORK/served.wasm"
+check_eq "$(sha256sum "$WORK/served.wasm" | cut -d' ' -f1)" "$(sha256sum "$ROOT/web/sync_video_player_hash.wasm" | cut -d' ' -f1)" "服务端提供的 wasm 与仓库产物一致"
 check_eq "$(curl -s "$BASE/api/hello" | jq -r .wasm_abi)" "2" "/api/hello 报告 wasm ABI 版本"
 
 echo

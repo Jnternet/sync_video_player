@@ -1,4 +1,4 @@
-//! rtest —— 局域网同步播放器。
+//! sync_video_player —— 局域网同步播放器。
 //!
 //! 设计要点：
 //!   1. 单个可执行文件：前端 HTML/CSS/JS 用 include_str! 内嵌，HTTP 服务器自己实现。
@@ -102,7 +102,7 @@ fn parse_args(args: &[String]) -> Result<Cmd, String> {
             i += 1;
         }
         let path = path
-            .ok_or_else(|| "hash 需要文件路径，例如: rtest hash \"D:/movie.mkv\"".to_string())?;
+            .ok_or_else(|| "hash 需要文件路径，例如: sync_video_player hash \"D:/movie.mkv\"".to_string())?;
         return Ok(Cmd::Hash { path, mode, json });
     }
 
@@ -145,24 +145,24 @@ fn parse_args(args: &[String]) -> Result<Cmd, String> {
 fn print_help() {
     println!(
         "\
-rtest —— 局域网同步播放器（单文件可执行，浏览器访问，只同步控制信息）
+sync_video_player —— 局域网同步播放器（单文件可执行，浏览器访问，只同步控制信息）
 
 用法:
-  rtest                             启动服务（默认 0.0.0.0:8080，房间 main）
-  rtest serve [选项]
-      --bind <地址:端口>             监听地址，默认 0.0.0.0:8080
-      --port <端口>                  只改端口
-      --room <房间名>                指定默认房间名
-      --open                         启动后尝试打开浏览器
+  sync_video_player                          启动服务（默认 0.0.0.0:8080，房间 main）
+  sync_video_player serve [选项]             启动服务并指定下面的选项
+      --bind <地址:端口>                     监听地址，默认 0.0.0.0:8080
+      --port <端口>                          只改端口
+      --room <房间名>                        指定默认房间名
+      --open                                 启动后尝试打开浏览器
 
-  rtest hash <文件路径> [选项]       本地计算文件哈希（不上传、不需要服务器）
-      --sample                       抽样指纹（只读几 MB，适合超大文件）
-      --json                         输出一行 JSON，方便粘贴到网页
+  sync_video_player hash <文件路径> [选项]   本地计算文件哈希（不上传、不需要服务器）
+      --sample                               抽样指纹（只读几 MB，适合超大文件）
+      --json                                 输出一行 JSON，方便粘贴到网页
 
 说明:
   * 视频文件不会上传到服务器，也不会被任何人下载，一个字都不会过网络。
   * 网页端把 Rust 编译成的 WebAssembly 下载到本机（约 18 KB），由它在浏览器里读文件算 SHA-256。
-  * 也可以用 rtest hash 先在本地算好，再把哈希粘进网页。"
+  * 也可以用 sync_video_player hash 先在本地算好，再把哈希粘进网页。"
     );
 }
 
@@ -283,7 +283,7 @@ async fn serve(opts: ServeOpts) -> Result<(), String> {
     let lan_url = lan_ip().map(|ip| format!("http://{ip}:{port}/?room={}", opts.room));
 
     println!("==============================================================");
-    println!(" rtest · 局域网同步播放（只同步控制信息，视频不落地）");
+    println!(" sync_video_player · 局域网同步播放（只同步控制信息，视频不落地）");
     println!("==============================================================");
     println!("  房间:        {}", opts.room);
     println!("  本机访问:    {local_url}");
@@ -440,7 +440,7 @@ async fn route(app: &Arc<App>, req: &Request, peer: IpAddr) -> Response {
         ("GET", "/app.js") => Response::js(assets::APP_JS),
         ("GET", "/app.css") => Response::css(assets::APP_CSS),
         // 浏览器本地运行的 Rust 哈希器（WebAssembly）
-        ("GET", "/rtest_hash.wasm") => {
+        ("GET", "/sync_video_player_hash.wasm") => {
             Response::new(200, "application/wasm", assets::HASH_WASM.to_vec())
         }
         ("GET", "/favicon.ico") => Response::empty(204),

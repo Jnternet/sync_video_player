@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 构建浏览器内使用的 Rust 哈希器（WebAssembly），产物复制到 web/rtest_hash.wasm。
+# 构建浏览器内使用的 Rust 哈希器（WebAssembly），产物复制到 web/sync_video_player_hash.wasm。
 # 需要 wasm32-unknown-unknown 目标：rustup target add wasm32-unknown-unknown
 set -euo pipefail
 
@@ -14,10 +14,10 @@ fi
 echo "== 编译 wasm 哈希器 =="
 cargo build --release --manifest-path wasm/Cargo.toml --target wasm32-unknown-unknown
 
-ARTIFACT="wasm/target/wasm32-unknown-unknown/release/rtest_hash_wasm.wasm"
-cp "$ARTIFACT" web/rtest_hash.wasm
+ARTIFACT="wasm/target/wasm32-unknown-unknown/release/sync_video_player_hash_wasm.wasm"
+cp "$ARTIFACT" web/sync_video_player_hash.wasm
 
-SIZE=$(stat -c %s web/rtest_hash.wasm)
-echo "== 完成：web/rtest_hash.wasm（${SIZE} 字节）=="
+SIZE=$(stat -c %s web/sync_video_player_hash.wasm)
+echo "== 完成：web/sync_video_player_hash.wasm（${SIZE} 字节）=="
 echo "接下来重新构建主程序，让新产物被内嵌进可执行文件：cargo build --release"
 

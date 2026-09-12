@@ -3,5 +3,5 @@
 version = 4
 
 [[package]]
-name = "rtest-hash-wasm"
+name = "sync_video_player-hash-wasm"
 version = "0.1.0"

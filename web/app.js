@@ -1,6 +1,6 @@
 'use strict';
 
-/* rtest 前端：本地文件播放 + 控制信息同步
+/* sync_video_player 前端：本地文件播放 + 控制信息同步
  *
  * 关键点：
  *  - 视频永远是本机 blob: 播放，服务器不保存也不转发任何视频字节。
@@ -49,12 +49,12 @@ const cleanRoom = (params.get('room') || 'main').replace(/[^0-9A-Za-z_-]/g, '').
 
 const S = {
   room: cleanRoom,
-  client: localStorage.getItem('rtest.client') || (() => {
+  client: localStorage.getItem('sync_video_player.client') || (() => {
     const v = randomHex(8);
-    localStorage.setItem('rtest.client', v);
+    localStorage.setItem('sync_video_player.client', v);
     return v;
   })(),
-  name: localStorage.getItem('rtest.name') || ('用户' + Math.floor(Math.random() * 900 + 100)),
+  name: localStorage.getItem('sync_video_player.name') || ('用户' + Math.floor(Math.random() * 900 + 100)),
   state: null,
   connected: false,
   offset: 0,
@@ -272,7 +272,7 @@ const WASM_ABI = 2;
 
 async function loadHasher() {
   if (S.wasm) return S.wasm;
-  const resp = await fetch('/rtest_hash.wasm');
+  const resp = await fetch('/sync_video_player_hash.wasm');
   if (!resp.ok) throw new Error('无法获取本地哈希模块（HTTP ' + resp.status + '）');
   let mod;
   try {
@@ -281,12 +281,12 @@ async function loadHasher() {
     throw new Error('哈希模块无法加载：' + e.message);
   }
   const ex = mod.instance.exports;
-  const abi = ex.rtest_version();
+  const abi = ex.sync_video_player_version();
   if (abi !== WASM_ABI) {
     throw new Error('哈希模块版本不匹配（期望 ' + WASM_ABI + '，实际 ' + abi + '），请重新构建');
   }
   S.wasm = ex;
-  S.stagePtr = ex.rtest_alloc(STAGE_BYTES);
+  S.stagePtr = ex.sync_video_player_alloc(STAGE_BYTES);
   return ex;
 }
 
@@ -299,16 +299,16 @@ async function feedRange(ex, file, offset, length, onBytes) {
     const bytes = new Uint8Array(await file.slice(from, to).arrayBuffer());
     // 每次重建视图：wasm 内存增长会让旧视图失效
     new Uint8Array(ex.memory.buffer, S.stagePtr, bytes.length).set(bytes);
-    ex.rtest_update(S.stagePtr, bytes.length);
+    ex.sync_video_player_update(S.stagePtr, bytes.length);
     onBytes(bytes.length);
   }
 }
 
 function readSamplePlan(ex) {
-  const n = ex.rtest_sample_count();
+  const n = ex.sync_video_player_sample_count();
   const plan = [];
   for (let i = 0; i < n; i++) {
-    const p = ex.rtest_sample_at(i);
+    const p = ex.sync_video_player_sample_at(i);
     const dv = new DataView(ex.memory.buffer, p, 16);
     plan.push({
       offset: Number(dv.getBigUint64(0, true)),
@@ -319,7 +319,7 @@ function readSamplePlan(ex) {
 }
 
 function digestHex(ex) {
-  const p = ex.rtest_finish();
+  const p = ex.sync_video_player_finish();
   return Array.from(new Uint8Array(ex.memory.buffer, p, 32), (b) =>
     b.toString(16).padStart(2, '0')).join('');
 }
@@ -354,7 +354,7 @@ async function startHash() {
     };
 
     if (mode === 'sample') {
-      ex.rtest_begin_sample(BigInt(f.size));
+      ex.sync_video_player_begin_sample(BigInt(f.size));
       const plan = readSamplePlan(ex);
       total = plan.reduce((a, s) => a + s.len, 0);
       for (const sp of plan) {
@@ -368,7 +368,7 @@ async function startHash() {
         const now = performance.now();
         if (now - lastTick >= 100) { lastTick = now; tick(); }
       };
-      ex.rtest_begin_full();
+      ex.sync_video_player_begin_full();
       await feedRange(ex, f, 0, f.size, (n) => { processed += n; maybeTick(); });
       processed = f.size;
     }
@@ -420,7 +420,7 @@ async function setMedia() {
 
 function useManualHash() {
   const raw = $('manualInput').value.trim();
-  if (!raw) { msgBox('manualMsg', '先粘贴哈希或 rtest hash --json 的输出', 'bad'); return; }
+  if (!raw) { msgBox('manualMsg', '先粘贴哈希或 sync_video_player hash --json 的输出', 'bad'); return; }
 
   let hash = null, size = null, name = null, mode = 'manual';
   if (raw.startsWith('{')) {

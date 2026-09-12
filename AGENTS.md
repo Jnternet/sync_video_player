@@ -10,7 +10,7 @@
 - **提交信息**用 `类型: 中文简述` 的格式，类型取 `feat` / `fix` / `docs` / `refactor` / `test` / `chore`。
   例如 `fix: 缓冲等待在 90 秒后不再无限期挂起`。
 - **别提交构建产物**：`target/`（含 `wasm/target/`）和 `vendor/` 已在 `.gitignore` 里。
-  例外是 `web/rtest_hash.wasm`——它是**刻意入库**的，方便别人 clone 下来直接跑；改了 wasm 源码要连它一起提交。
+  例外是 `web/sync_video_player_hash.wasm`——它是**刻意入库**的，方便别人 clone 下来直接跑；改了 wasm 源码要连它一起提交。
 - **推送**：`git push origin main`，远端是 https://github.com/Jnternet/sync_video_player 。
   需要代理时本仓库已配好 `http.proxy` / `https.proxy`。
 - **发布**打附注标签：`git tag -a v0.1.0 -m "v0.1.0"`，标签要单独推：`git push origin refs/tags/v0.1.0`。

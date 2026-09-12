@@ -1,13 +1,13 @@
 # 浏览器内运行的 Rust 哈希器（独立 crate，编译目标 wasm32-unknown-unknown）
-# 构建：bash scripts/build-wasm.sh   （产物会复制到 web/rtest_hash.wasm）
+# 构建：bash scripts/build-wasm.sh   （产物会复制到 web/sync_video_player_hash.wasm）
 [package]
-name = "rtest-hash-wasm"
+name = "sync_video_player-hash-wasm"
 version = "0.1.0"
 edition = "2021"
 publish = false
 
 [lib]
-name = "rtest_hash_wasm"
+name = "sync_video_player_hash_wasm"
 crate-type = ["cdylib"]
 path = "src/lib.rs"
 

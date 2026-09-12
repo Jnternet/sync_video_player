@@ -1,4 +1,4 @@
-# rtest 设计文档
+# sync_video_player 设计文档
 
 ## 1. 目标与约束
 
@@ -28,7 +28,7 @@
 把 Rust 本身送到浏览器里执行。
 
 于是把 `src/sha256.rs`（纯 Rust 增量 SHA-256）编译成 `wasm32-unknown-unknown`，
-用几十行 C ABI 暴露 `rtest_begin_full / rtest_update / rtest_finish`，
+用几十行 C ABI 暴露 `sync_video_player_begin_full / sync_video_player_update / sync_video_player_finish`，
 由网页端把文件按 4 MiB 一批喂进 wasm 线性内存。结果：
 
 - 文件字节的旅程是「磁盘 → 浏览器 File API → wasm 内存 → 摘要」，**全程不出本机**；
@@ -42,7 +42,7 @@
 | 速度 | wasm 里 213 MiB/s，原生 CLI 264 MiB/s（约慢 20%）——完全不影响体验，因为省掉了整个网络传输 |
 | 兼容性 | 需要浏览器支持 WebAssembly（2017 年后的主流浏览器都支持） |
 | 构建复杂度 | 多一步 `scripts/build-wasm.sh`；用 ABI 版本号 + `check-wasm.mjs` 两道护栏防止前后端算法漂移 |
-| 兜底 | 浏览器不支持时，仍可用 `rtest hash` 在本地算好后把哈希粘进网页 |
+| 兜底 | 浏览器不支持时，仍可用 `sync_video_player hash` 在本地算好后把哈希粘进网页 |
 
 ### 2.2 同步走 SSE 而不是 WebSocket
 
@@ -73,23 +73,23 @@
 ## 3. 架构
 
 ```
-   浏览器 A（本机文件从不外发）                      浏览器 B
- ┌───────────────────────────────┐            ┌───────────────────────────────┐
- │  <video> ── blob: 本地文件     │            │  <video> ── blob: 本地文件     │
- │  app.js                        │            │  app.js                        │
- │  rtest_hash.wasm  ← Rust 哈希器 │            │  rtest_hash.wasm  ← Rust 哈希器 │
- │     ↑ 只读本机文件字节          │            │     ↑ 只读本机文件字节          │
- └───────┬───────────────────────┘            └───────┬───────────────────────┘
-         │ 仅控制信息：SSE 状态下行 / POST 指令上行        │
-         ▼                                              ▼
- ┌──────────────────────────────────────────────────────────────────────┐
- │                     rtest（单个 Rust 可执行文件）                     │
- │  http.rs          手写 HTTP/1.1：路由、keep-alive、SSE、1 MiB 体积闸门 │
- │  rooms.rs         房间状态机：位置/倍速/缓冲等待/参与者               │
- │  hashspec.rs      采样计划与抽样编码（与 wasm 共用）                  │
- │  sha256.rs        纯 Rust 增量 SHA-256（同一份源码也编进 wasm）        │
- │  assets.rs        内嵌 index.html / app.js / app.css / rtest_hash.wasm│
- └──────────────────────────────────────────────────────────────────────┘
+   浏览器 A（本机文件从不外发）                              浏览器 B
+ ┌────────────────────────────────┐           ┌────────────────────────────────┐
+ │ <video> ── blob: 本地文件      │           │ <video> ── blob: 本地文件      │
+ │ app.js                         │           │ app.js                         │
+ │ sync_video_player_hash.wasm    │           │ sync_video_player_hash.wasm    │
+ │ ↑ 只读本机文件字节·Rust 哈希器 │           │ ↑ 只读本机文件字节·Rust 哈希器 │
+ └────────────────┬───────────────┘           └────────────────┬───────────────┘
+                 │  仅控制信息：SSE 状态下行 / POST 指令上行  │
+                 ▼                                            ▼
+    ┌──────────────────────────────────────────────────────────────────────┐
+    │              sync_video_player（单个 Rust 可执行文件）               │
+    │  http.rs      手写 HTTP/1.1：路由、keep-alive、SSE、1 MiB 体积闸门   │
+    │  rooms.rs     房间状态机：位置/倍速/缓冲等待/参与者                  │
+    │  hashspec.rs  采样计划与抽样编码（与 wasm 共用）                     │
+    │  sha256.rs    纯 Rust 增量 SHA-256（同一份源码也编进 wasm）          │
+    │  assets.rs    内嵌 index.html / app.js / app.css / wasm              │
+    └──────────────────────────────────────────────────────────────────────┘
 ```
 
 注意：图中**没有任何一条从浏览器指向服务器的文件数据流**。
@@ -100,16 +100,16 @@
 
 | 导出 | 说明 |
 | --- | --- |
-| `rtest_version() -> u32` | ABI 版本，前端校验不匹配就拒绝使用 |
-| `rtest_alloc(len) -> *mut u8` | 在线性内存里申请暂存缓冲（前端只在加载时调用一次） |
-| `rtest_begin_full()` | 开始整文件 SHA-256 |
-| `rtest_begin_sample(size: u64)` | 开始抽样指纹：内部按共享的 `sample_plan` 写入域前缀与采样点表 |
-| `rtest_sample_count() -> u32` | 采样点数量 |
-| `rtest_sample_at(i) -> *const u8` | 第 i 个采样点的 `[offset(8B LE), len(8B LE)]` |
-| `rtest_update(ptr, len)` | 追加一段字节做增量哈希 |
-| `rtest_finish() -> *const u8` | 返回 32 字节摘要，前端转小写十六进制 |
+| `sync_video_player_version() -> u32` | ABI 版本，前端校验不匹配就拒绝使用 |
+| `sync_video_player_alloc(len) -> *mut u8` | 在线性内存里申请暂存缓冲（前端只在加载时调用一次） |
+| `sync_video_player_begin_full()` | 开始整文件 SHA-256 |
+| `sync_video_player_begin_sample(size: u64)` | 开始抽样指纹：内部按共享的 `sample_plan` 写入域前缀与采样点表 |
+| `sync_video_player_sample_count() -> u32` | 采样点数量 |
+| `sync_video_player_sample_at(i) -> *const u8` | 第 i 个采样点的 `[offset(8B LE), len(8B LE)]` |
+| `sync_video_player_update(ptr, len)` | 追加一段字节做增量哈希 |
+| `sync_video_player_finish() -> *const u8` | 返回 32 字节摘要，前端转小写十六进制 |
 
-前端按 4 MiB 一批读文件（`File.slice(...).arrayBuffer()`），拷进线性内存后调用 `rtest_update`。
+前端按 4 MiB 一批读文件（`File.slice(...).arrayBuffer()`），拷进线性内存后调用 `sync_video_player_update`。
 每批都重建 `Uint8Array` 视图，因为 wasm 内存增长会让旧视图失效。
 
 ## 5. 同步协议
@@ -162,7 +162,7 @@ struct RoomState {
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
 | GET | `/`、`/app.js`、`/app.css` | 内嵌前端资源 |
-| GET | `/rtest_hash.wasm` | 内嵌的 Rust 哈希器（`application/wasm`） |
+| GET | `/sync_video_player_hash.wasm` | 内嵌的 Rust 哈希器（`application/wasm`） |
 | GET | `/api/hello` | 服务器时间（时钟对齐）+ wasm ABI 版本 |
 | GET | `/api/state?room=&client=&name=` | 完整房间快照 |
 | GET | `/api/events?room=&client=&name=` | SSE 状态流（事件 + 每秒心跳） |
@@ -190,7 +190,7 @@ struct RoomState {
 | 哈希正确性 | `sha256.rs` 自带 NIST 向量（空串、`abc`、448/896 位、100 万个 `a`）与分块等价性测试 |
 | 抽样规范 | 采样计划排序/越界/读取量测试；抽样摘要稳定性与敏感性测试 |
 | 状态机 | 位置/倍速计算、哈希冲突拒绝、跳转钳制、缓冲等待、离线回收的单元测试 |
-| **wasm 与 CLI 一致性** | `scripts/check-wasm.mjs`：直接实例化 wasm，与 Node `crypto`、`rtest hash`、`rtest hash --sample` 三向比对 |
+| **wasm 与 CLI 一致性** | `scripts/check-wasm.mjs`：直接实例化 wasm，与 Node `crypto`、`sync_video_player hash`、`sync_video_player hash --sample` 三向比对 |
 | 端到端 | `scripts/smoke.sh`：真实起服务，41 项断言覆盖静态资源→wasm 提供→上传接口 404→体积闸门→房间→同步→SSE→重置 |
 | 前端接线 | `scripts/check-ui.mjs`：校验 `app.js` 引用的 id/class 在 HTML 中存在，且 HTML id 不重复 |
 

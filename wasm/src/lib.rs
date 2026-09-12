@@ -1,10 +1,10 @@
 //! 在浏览器本地运行的 Rust 哈希器。
 //!
-//! 浏览器把文件按块读进来、写进本模块的线性内存，调用 `rtest_update` 做增量 SHA-256。
+//! 浏览器把文件按块读进来、写进本模块的线性内存，调用 `sync_video_player_update` 做增量 SHA-256。
 //! **文件字节全程留在本机**：不过网络，也不进入本模块以外的任何地方。
 //!
 //! 哈希实现与抽样规范直接复用主程序的源码（见下面的 `#[path]`），
-//! 因此 `rtest hash` 与网页端算出的摘要必然一致。
+//! 因此 `sync_video_player hash` 与网页端算出的摘要必然一致。
 
 #[path = "../../src/sha256.rs"]
 mod sha256;
@@ -31,22 +31,22 @@ fn hasher() -> &'static mut Sha256 {
 
 /// 模块 ABI 版本
 #[no_mangle]
-pub extern "C" fn rtest_version() -> u32 {
+pub extern "C" fn sync_video_player_version() -> u32 {
     ABI_VERSION
 }
 
 /// 在 wasm 线性内存里申请一段缓冲区（前端用来暂存待哈希的字节）
 #[no_mangle]
-pub extern "C" fn rtest_alloc(len: usize) -> *mut u8 {
+pub extern "C" fn sync_video_player_alloc(len: usize) -> *mut u8 {
     let mut v: Vec<u8> = Vec::with_capacity(len);
     let p = v.as_mut_ptr();
     core::mem::forget(v);
     p
 }
 
-/// 释放 `rtest_alloc` 申请的缓冲区
+/// 释放 `sync_video_player_alloc` 申请的缓冲区
 #[no_mangle]
-pub extern "C" fn rtest_free(ptr: *mut u8, len: usize) {
+pub extern "C" fn sync_video_player_free(ptr: *mut u8, len: usize) {
     unsafe {
         drop(Vec::from_raw_parts(ptr, 0, len));
     }
@@ -54,7 +54,7 @@ pub extern "C" fn rtest_free(ptr: *mut u8, len: usize) {
 
 /// 开始一次整文件 SHA-256
 #[no_mangle]
-pub extern "C" fn rtest_begin_full() {
+pub extern "C" fn sync_video_player_begin_full() {
     unsafe {
         let h: &mut Sha256 = &mut *ptr::addr_of_mut!(HASHER);
         *h = Sha256::new();
@@ -63,9 +63,9 @@ pub extern "C" fn rtest_begin_full() {
     }
 }
 
-/// 开始一次抽样指纹：先写入域前缀/长度/采样点表，随后按顺序 `rtest_update` 各采样点数据。
+/// 开始一次抽样指纹：先写入域前缀/长度/采样点表，随后按顺序 `sync_video_player_update` 各采样点数据。
 #[no_mangle]
-pub extern "C" fn rtest_begin_sample(size: u64) {
+pub extern "C" fn sync_video_player_begin_sample(size: u64) {
     let plan = sample_plan(size);
     let h = hasher();
     *h = Sha256::new();
@@ -78,14 +78,14 @@ pub extern "C" fn rtest_begin_sample(size: u64) {
 
 /// 本次抽样计划包含多少个采样点
 #[no_mangle]
-pub extern "C" fn rtest_sample_count() -> u32 {
+pub extern "C" fn sync_video_player_sample_count() -> u32 {
     let plan: &Vec<Sample> = unsafe { &*ptr::addr_of!(PLAN) };
     plan.len() as u32
 }
 
 /// 第 i 个采样点的 `[offset(8 字节 LE), len(8 字节 LE)]`，返回指向该 16 字节的指针。
 #[no_mangle]
-pub extern "C" fn rtest_sample_at(i: u32) -> *const u8 {
+pub extern "C" fn sync_video_player_sample_at(i: u32) -> *const u8 {
     unsafe {
         let plan = &*ptr::addr_of!(PLAN);
         if (i as usize) >= plan.len() {
@@ -101,7 +101,7 @@ pub extern "C" fn rtest_sample_at(i: u32) -> *const u8 {
 
 /// 追加一段字节（指针指向 wasm 线性内存）
 #[no_mangle]
-pub extern "C" fn rtest_update(data: *const u8, len: usize) {
+pub extern "C" fn sync_video_player_update(data: *const u8, len: usize) {
     if data.is_null() || len == 0 {
         return;
     }
@@ -111,7 +111,7 @@ pub extern "C" fn rtest_update(data: *const u8, len: usize) {
 
 /// 结束并返回 32 字节摘要的指针（转小写十六进制由前端完成）
 #[no_mangle]
-pub extern "C" fn rtest_finish() -> *const u8 {
+pub extern "C" fn sync_video_player_finish() -> *const u8 {
     let digest = hasher().clone().finalize();
     unsafe {
         let out: &mut [u8; 32] = &mut *ptr::addr_of_mut!(OUT);

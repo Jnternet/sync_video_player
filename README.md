@@ -1,4 +1,4 @@
-# rtest · 局域网同步播放器
+# sync_video_player · 局域网同步播放器
 
 多人一起看同一个视频，但**谁都不用上传文件**。
 
@@ -30,17 +30,17 @@
 服务端只做一件事：转发控制信息。视频文件始终待在各自的电脑上，用 `blob:` URL 交给本机浏览器播放。
 
 ```
-        甲机                                        乙机
+          甲机                                      乙机
  ┌────────────────────┐                    ┌────────────────────┐
- │  本地视频文件       │                    │  本地视频文件       │
+ │    本地视频文件    │                    │    本地视频文件    │
  │      ↓ blob:       │                    │      ↓ blob:       │
- │   浏览器 <video>    │                    │   浏览器 <video>    │
+ │   浏览器 <video>   │                    │   浏览器 <video>   │
  └─────────┬──────────┘                    └──────────┬─────────┘
-           │  哈希 / 播放 / 暂停 / 跳转 / 倍速            │
-           └──────────►  ┌────────────────┐  ◄──────────┘
-                         │  rtest 服务端   │
-                         │  只转发控制信息  │
-                         └────────────────┘
+           │    哈希 / 播放 / 暂停 / 跳转 / 倍速     │
+           └──────────►  ┌────────────────────────┐  ◄──────────┘
+                         │   sync_video_player    │
+                         │     只转发控制信息     │
+                         └────────────────────────┘
 ```
 
 服务端**只接受 ≤1 MiB 的 JSON 控制请求**，没有任何接收文件字节的接口——上传通道是被刻意删掉的，
@@ -66,8 +66,8 @@
 所以只想跑起来的话，两步就够：
 
 ```bash
-cargo build --release      # 产物：target/release/rtest
-./target/release/rtest     # 默认监听 0.0.0.0:8080，房间 main
+cargo build --release              # 产物：target/release/sync_video_player
+./target/release/sync_video_player # 默认监听 0.0.0.0:8080，房间 main
 ```
 
 启动后终端会打印访问地址：
@@ -83,8 +83,8 @@ cargo build --release      # 产物：target/release/rtest
 
 ## 如何使用
 
-1. **一个人起服务。** 在任意一台大家都能访问到的机器上运行 `./target/release/rtest`
-   （Windows 上双击 `rtest.exe` 也可以），记下它打印的「局域网访问」地址。
+1. **一个人起服务。** 在任意一台大家都能访问到的机器上运行 `./target/release/sync_video_player`
+   （Windows 上双击 `sync_video_player.exe` 也可以），记下它打印的「局域网访问」地址。
 
 2. **其他人打开链接。** 浏览器直接访问那个地址即可，无需安装任何东西。
    网页右上角有「复制邀请链接」，可以直接发到群里。
@@ -120,7 +120,7 @@ cargo build --release      # 产物：target/release/rtest
 | --- | --- | --- |
 | 本机完整 SHA-256（默认） | 整个文件（仅本地读盘） | 权威判定「是不是同一个文件」 |
 | 本机抽样指纹 | 约 3 MB（头/尾/8 个采样点） | 几十 GB 的 remux，几秒出结果 |
-| `rtest hash` 命令行 | 整个文件（仅本地读盘） | 不想开网页算，或想先算好再进房间 |
+| `sync_video_player hash` 命令行 | 整个文件（仅本地读盘） | 不想开网页算，或想先算好再进房间 |
 | 服务器本机路径 | 整个文件（服务器读自己的盘） | 视频就在服务器这台机器上，**仅回环地址可用** |
 
 实测（本机 release 构建）：
@@ -128,7 +128,7 @@ cargo build --release      # 产物：target/release/rtest
 | 项目 | 结果 |
 | --- | --- |
 | wasm 里跑 Rust SHA-256 | **213 MiB/s**（512 MiB 用 2.4 s） |
-| `rtest hash`（CLI，纯 Rust） | **264 MiB/s**（1 GiB 用 4.1 s），与 `sha256sum` 逐位一致 |
+| `sync_video_player hash`（CLI，纯 Rust） | **264 MiB/s**（1 GiB 用 4.1 s），与 `sha256sum` 逐位一致 |
 | 抽样指纹 1 GiB | 12 ms |
 | 网络传输量 | **0 字节**（无论文件多大） |
 
@@ -162,12 +162,12 @@ cargo build --release      # 产物：target/release/rtest
 ## 命令行
 
 ```bash
-./rtest                                  # 启动服务，默认 0.0.0.0:8080，房间 main
-./rtest serve --port 9000 --room movie --open
-./rtest hash /path/to/video.mkv          # 本地计算整文件 SHA-256，不需要服务器
-./rtest hash /path/to/video.mkv --sample # 抽样指纹（只读几 MB）
-./rtest hash /path/to/video.mkv --json   # 输出一行 JSON，便于粘贴到网页「手动填哈希」
-./rtest --help
+./sync_video_player                                  # 启动服务，默认 0.0.0.0:8080，房间 main
+./sync_video_player serve --port 9000 --room movie --open
+./sync_video_player hash /path/to/video.mkv          # 本地计算整文件 SHA-256，不需要服务器
+./sync_video_player hash /path/to/video.mkv --sample # 抽样指纹（只读几 MB）
+./sync_video_player hash /path/to/video.mkv --json   # 输出一行 JSON，便于粘贴到网页「手动填哈希」
+./sync_video_player --help
 ```
 
 | 选项 | 说明 |
@@ -180,7 +180,7 @@ cargo build --release      # 产物：target/release/rtest
 | `hash --full` | 完整 SHA-256（默认） |
 | `hash --json` | 输出一行 JSON |
 
-`rtest hash --json` 的输出可以直接粘进网页的「手动填哈希」标签页，适合不想在浏览器里现场算的场景。
+`sync_video_player hash --json` 的输出可以直接粘进网页的「手动填哈希」标签页，适合不想在浏览器里现场算的场景。
 这条路径不传输任何文件字节，但需要你自己保证两边文件一致。
 
 ## 验证
@@ -193,7 +193,7 @@ node scripts/check-sync-policy.mjs # 用 DOM 桩跑真实 app.js：验证「只�
 bash scripts/smoke.sh              # 45 项端到端检查：真实起服务走完整流程
 ```
 
-`scripts/check-wasm.mjs` 会直接实例化 wasm 并比对三份结果：Node 的 `crypto`、wasm 模块、`rtest hash` CLI，
+`scripts/check-wasm.mjs` 会直接实例化 wasm 并比对三份结果：Node 的 `crypto`、wasm 模块、`sync_video_player hash` CLI，
 整文件与抽样两种模式都比对——这正是「前后端算法不许漂移」的护栏。
 
 `scripts/check-sync-policy.mjs` 用最小 DOM 桩加载真实的 `web/app.js`，断言：心跳快照不会引起任何
@@ -207,8 +207,8 @@ bash scripts/smoke.sh              # 45 项端到端检查：真实起服务走�
 
 ```bash
 # 1) 浏览器内的哈希器（只在 wasm 源码变化后才需要重跑）
-rustup target add wasm32-unknown-unknown     # 一次性
-bash scripts/build-wasm.sh                   # → web/rtest_hash.wasm（约 18 KB）
+rustup target add wasm32-unknown-unknown # 一次性
+bash scripts/build-wasm.sh               # → web/sync_video_player_hash.wasm（约 18 KB）
 
 # 2) 主程序（会自动把上面的 wasm 内嵌进去）
 cargo build --release
@@ -222,7 +222,7 @@ cargo build --release
 
 ```bash
 cargo build --release --offline
-cargo vendor vendor/       # 需要分发源码时把依赖打包进仓库
+cargo vendor vendor/ # 需要分发源码时把依赖打包进仓库
 ```
 
 想做「拷到任何 Linux 都能跑」的完全静态文件：
@@ -251,7 +251,7 @@ src/rooms.rs          房间状态机与同步协议（位置/倍速/缓冲等�
 src/sha256.rs         纯 Rust 增量 SHA-256（含 NIST 测试向量）
 src/hashspec.rs       采样计划与抽样摘要编码（主程序与 wasm 共用同一份源码）
 wasm/                 浏览器内运行的 Rust 哈希器（cdylib → wasm32-unknown-unknown）
-web/                  内嵌进二进制的网页前端 + 构建出的 rtest_hash.wasm
+web/                  内嵌进二进制的网页前端 + 构建出的 sync_video_player_hash.wasm
 scripts/smoke.sh      端到端冒烟测试
 scripts/check-wasm.mjs wasm 与 CLI 的哈希一致性校验
 docs/DESIGN.md        设计文档（含协议与取舍）

@@ -3,13 +3,13 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>rtest · 同步播放</title>
+<title>sync_video_player · 同步播放</title>
 <link rel="stylesheet" href="/app.css">
 </head>
 <body>
 <header>
   <div class="brand">
-    <span class="logo">rtest</span>
+    <span class="logo">sync_video_player</span>
     <span class="sub">局域网同步播放 · 只同步控制信息</span>
   </div>
   <div class="header-right">
@@ -103,7 +103,7 @@
       </div>
 
       <div class="pane hidden" id="pane-manual">
-        <p class="note">在任意机器上运行 <code>rtest hash "文件路径" --json</code>，把输出粘贴到这里。此模式不传输任何文件字节，但需要你自己保证文件一致。</p>
+        <p class="note">在任意机器上运行 <code>sync_video_player hash "文件路径" --json</code>，把输出粘贴到这里。此模式不传输任何文件字节，但需要你自己保证文件一致。</p>
         <textarea id="manualInput" rows="3" placeholder='{"name":"movie.mkv","size":123456,"mode":"full","hash":"…"}'></textarea>
         <button id="manualBtn" class="primary">用这个哈希加入房间</button>
         <div class="msg" id="manualMsg"></div>

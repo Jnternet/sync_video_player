@@ -24,3 +24,26 @@
 - `src/hashspec.rs` 和 `src/sha256.rs` 由主程序与 wasm **共用同一份源码**，
   改完必须重跑 `bash scripts/build-wasm.sh` 再 `cargo build --release`，否则两边算法会漂移。
 - 用户可见的文案是中文，代码注释也用中文。
+
+## 发版流程（每个版本都要做）
+
+**每更新一个版本，都要构建 Linux 和 Windows 两个平台的产物并推到 GitHub Release**，
+不要只推代码：用户是直接下载二进制来用的。
+
+```bash
+cargo test && bash scripts/smoke.sh          # 先确认测试全绿
+bash scripts/package-release.sh              # 构建 + 打包到 dist/
+bash scripts/package-release.sh --publish    # 上传到 GitHub Release
+```
+
+- 产物：`sync_video_player-vX.Y.Z-x86_64-unknown-linux-musl.tar.gz`
+  （musl 静态链接，任何 Linux 都能直接跑）和 `sync_video_player-vX.Y.Z-x86_64-pc-windows-gnu.zip`
+  （Windows exe，只依赖系统 DLL）。两个包里都带 `README.md`。
+- 版本号取自 `Cargo.toml` 的 `version`，标签同名 `vX.Y.Z`；
+  **标签要单独推**：`git push origin refs/tags/vX.Y.Z`。
+- Windows 产物靠 zig 交叉编译（本机没有 mingw）：需要 `rustup target add x86_64-pc-windows-gnu`
+  和 `cargo-zigbuild`（`cargo install cargo-zigbuild --locked`），zig 在 `~/.local/bin/zig`。
+  脚本会把 zig 的缓存目录放到 `target/` 下，容器里 `$HOME/.cache` 只读也不影响。
+- 上传的 token 从 `~/.git-credentials` 读，也可以用 `GITHUB_TOKEN` 环境变量覆盖。
+- 发布后验证一次真产物：`bash scripts/smoke.sh dist/.../sync_video_player`
+- 这个容器里往 `$HOME` 下写常常需要提权；`target/` 和 `/tmp` 可以随便写。

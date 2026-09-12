@@ -708,4 +708,121 @@ mod tests {
         let args = vec!["hash".to_string()];
         assert!(parse_args(&args).is_err());
     }
+
+    #[test]
+    fn port_option_keeps_host() {
+        let args = vec![
+            "--bind".into(),
+            "127.0.0.1:9000".into(),
+            "--port".into(),
+            "9100".into(),
+        ];
+        match parse_args(&args).unwrap() {
+            Cmd::Serve(o) => assert_eq!(o.bind, "127.0.0.1:9100"),
+            _ => panic!("应为 serve"),
+        }
+    }
+
+    #[test]
+    fn open_flag_is_recognized() {
+        match parse_args(&["serve".into(), "--open".into()]).unwrap() {
+            Cmd::Serve(o) => assert!(o.open),
+            _ => panic!("应为 serve"),
+        }
+    }
+
+    #[test]
+    fn help_wins_over_other_args() {
+        for flag in ["-h", "--help", "help"] {
+            let args = vec!["serve".to_string(), flag.to_string()];
+            assert!(matches!(parse_args(&args).unwrap(), Cmd::Help), "{flag}");
+        }
+        // 没有参数时是启动服务，不是帮助
+        assert!(matches!(parse_args(&[]).unwrap(), Cmd::Serve(_)));
+    }
+
+    #[test]
+    fn rejects_unknown_command_and_option() {
+        assert!(parse_args(&["nope".to_string()]).is_err());
+        assert!(parse_args(&["serve".to_string(), "--socket".to_string()]).is_err());
+        // 缺值的选项也不能静默通过
+        assert!(parse_args(&["serve".to_string(), "--bind".to_string()]).is_err());
+        assert!(parse_args(&["serve".to_string(), "--port".to_string()]).is_err());
+        assert!(parse_args(&["serve".to_string(), "--room".to_string()]).is_err());
+    }
+
+    #[test]
+    fn hash_command_parses_full_and_json() {
+        let args = vec![
+            "hash".to_string(),
+            "movie.mkv".into(),
+            "--full".into(),
+            "--json".into(),
+        ];
+        match parse_args(&args).unwrap() {
+            Cmd::Hash { path, mode, json } => {
+                assert_eq!(path, "movie.mkv");
+                assert_eq!(mode, Mode::Full);
+                assert!(json);
+            }
+            _ => panic!("应为 hash"),
+        }
+    }
+
+    // ---- 本机文件哈希（只读本机磁盘，绝不涉及网络） ----
+
+    /// 建一个只在本次测试里存在的临时目录，返回（目录，文件路径助手）。
+    fn temp_dir(tag: &str) -> std::path::PathBuf {
+        let mut dir = std::env::temp_dir();
+        let unique = format!(
+            "sync_video_player-test-{tag}-{}-{:?}",
+            std::process::id(),
+            std::thread::current().id()
+        );
+        dir.push(unique);
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    #[test]
+    fn hash_path_matches_independent_digest() {
+        let dir = temp_dir("path-hash");
+        let file = dir.join("movie.bin");
+        std::fs::write(&file, b"sync_video_player\n").unwrap();
+
+        let (hash, size, mtime) =
+            hash_path_blocking(file.to_str().unwrap(), Some(18), None).unwrap();
+        // 期望值由 node crypto（OpenSSL）独立算出，不是拿本项目自己的实现自证
+        assert_eq!(
+            hash,
+            "957165812c9f63d6819d675f91d5de2fe2c7284e8acd2f7593b5a0a7ccc4acef"
+        );
+        assert_eq!(size, 18);
+        assert!(mtime > 0, "应该能读到修改时间");
+
+        // 大小对不上：说明浏览器选中的不是磁盘上这个文件
+        let err = hash_path_blocking(file.to_str().unwrap(), Some(1), None).unwrap_err();
+        assert!(err.contains("大小不匹配"), "实际错误：{err}");
+
+        // 修改时间差得太多：同样拒绝
+        let err = hash_path_blocking(file.to_str().unwrap(), None, Some(mtime + 60_000))
+            .unwrap_err();
+        assert!(err.contains("修改时间不匹配"), "实际错误：{err}");
+
+        // 前后 2 秒内的抖动要容忍（不同文件系统的精度不同）
+        assert!(hash_path_blocking(file.to_str().unwrap(), None, Some(mtime + 1_000)).is_ok());
+
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn hash_path_rejects_bad_targets() {
+        let dir = temp_dir("bad-path");
+        let missing = dir.join("没有这个文件");
+        assert!(hash_path_blocking(missing.to_str().unwrap(), None, None).is_err());
+        // 目录不是普通文件
+        let err = hash_path_blocking(dir.to_str().unwrap(), None, None).unwrap_err();
+        assert!(err.contains("不是普通文件"), "实际错误：{err}");
+        std::fs::remove_dir_all(&dir).ok();
+    }
 }

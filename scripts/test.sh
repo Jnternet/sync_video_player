@@ -62,6 +62,7 @@ if has node; then
   step "前端 DOM 接线检查" node scripts/check-ui.mjs
   step "客户端同步策略检查" node scripts/check-sync-policy.mjs
   step "全屏控制条浮现/淡出检查" node scripts/check-fullscreen.mjs
+  step "键盘快捷键检查" node scripts/check-shortcuts.mjs
 else
   skipping "前端检查" "没装 node"
 fi

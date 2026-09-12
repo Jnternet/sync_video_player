@@ -77,6 +77,10 @@ const S = {
   autoTrim: false,
   scrubbing: false,
   ctlIdleTimer: 0,
+  // 按住 D/→ 的本机快进：holdKey = 正按着哪个键，holdRate = 临时倍速（0 = 没按）
+  holdKey: null,
+  holdRate: 0,
+  holdTimer: 0,
   // float = 叠在画面底部（默认：不占位置、画面不动，bilibili 那种）；
   // slide = 贴着画面下方滑出（占一条高度，但任何环境都画得出来，浮层失效时的退路）
   barMode: localStorage.getItem('sync_video_player.bar_mode') === 'slide' ? 'slide' : 'float',
@@ -175,10 +179,16 @@ function targetPos(st) {
   return Math.max(0, pos);
 }
 
-function hardSeek(ms) {
+// 目标位置按片长夹一下（结尾留 40ms，别正好落在最后一帧上）
+function clampPosition(ms) {
   const dur = isFinite(video.duration) && video.duration > 0 ? video.duration * 1000 : null;
   let target = Math.max(0, ms);
   if (dur) target = Math.min(target, Math.max(0, dur - 40));
+  return target;
+}
+
+function hardSeek(ms) {
+  const target = clampPosition(ms);
   try { video.currentTime = target / 1000; } catch (_) {}
   S.suppressUntil = Date.now() + 500;
   S.stallSince = 0;
@@ -210,8 +220,8 @@ function applyControlState(st) {
   const v = video;
   if (!st || !st.media || S.matches !== true || !S.file) { renderPlayerInfo(); return; }
 
-  // 倍速属于控制信息，按新的控制信息设置
-  v.playbackRate = st.rate;
+  // 倍速属于控制信息，按新的控制信息设置（按住 D/→ 的临时倍速优先，松手才让位）
+  v.playbackRate = S.holdRate || st.rate;
   if (v.readyState < 1) { renderPlayerInfo(); return; }
 
   const target = targetPos(st);
@@ -251,7 +261,8 @@ function tickLocal() {
   }
 
   // 可选的本地微调：默认关闭。开启后只用变速慢慢磨平偏差（不跳转、不联网）。
-  if (S.autoTrim && active) {
+  // 正按住 D/→ 快进时不插手，否则微调会把 2 倍速拽回去。
+  if (S.autoTrim && active && !S.holdRate) {
     const d = S.drift || 0;
     video.playbackRate = Math.abs(d) > 120 ? st.rate * (d > 0 ? 0.96 : 1.04) : st.rate;
   }
@@ -736,6 +747,126 @@ function onFullscreenChange() {
   pokeControls();   // 刚切完全屏先把控制条亮出来
 }
 
+/* --------------------------------------------------------- 键盘快捷键 */
+/* F 全屏 / W S ↑ ↓ 音量 / A D ← → 跳转 5 秒 / 按住 D → 本机 2 倍速快进。
+ * 输入框、下拉框、滑块里都不抢键：那些控件里的方向键有原生含义（移动光标、换选项、拖滑块）。 */
+
+const SEEK_STEP_MS = 5000;     // A/D 或 ←/→ 一次移动的时长
+const VOL_STEP = 10;           // 音量常规档位：10%
+const VOL_FINE_STEP = 2;       // 音量 ≤10% 时改用 2% 细调
+const VOL_FINE_MAX = 10;
+const HOLD_SCAN_MS = 200;      // 按住超过 0.2 秒才算长按（不到就是单击：跳 5 秒）
+const HOLD_SCAN_RATE = 2;      // 长按时的临时倍速（只在本机，不写进协议）
+
+// 正在打字/拖滑块时不吃快捷键
+function typingTarget(t) {
+  if (!t || !t.tagName) return false;
+  const tag = String(t.tagName).toLowerCase();
+  if (tag === 'input' || tag === 'textarea' || tag === 'select') return true;
+  return t.isContentEditable === true;
+}
+
+// 房间倍速（协议字段 rate）；还没进房间就按 1 倍算
+function roomRate() {
+  return S.state ? S.state.rate : 1;
+}
+
+// 本机实际倍速 = 房间倍速；按住 D/→ 期间临时用 2 倍，松手回到房间倍速
+function applyLocalRate() {
+  video.playbackRate = S.holdRate || roomRate();
+}
+
+// 跳转会同步给房间里所有人，所以只在"本机文件已经对上房间"时才响应：
+// 条件跟控制条出现的条件一致，免得哈希还对不上的人用键盘把全场带跑。
+function canControlRoom() {
+  return !!(S.file && S.state && S.state.media && S.matches === true);
+}
+
+// 音量档位：常规 10% 一档；音量 ≤10% 时用 2% 细调，从 10% 再往上接回 10% 那一档。
+function nextVolume(cur, dir) {
+  if (cur <= VOL_FINE_MAX) {
+    const fine = cur + dir * VOL_FINE_STEP;
+    return dir > 0 && fine > VOL_FINE_MAX ? VOL_FINE_MAX + VOL_STEP : fine;
+  }
+  return cur + dir * VOL_STEP;
+}
+
+// 音量只在本机生效（协议里没有这个字段），顺手把控制条上的音量条拨到同一格
+function bumpVolume(dir) {
+  const next = Math.max(0, Math.min(100, nextVolume(Math.round(video.volume * 100), dir)));
+  video.volume = next / 100;
+  $('vol').value = String(next);
+  return next;
+}
+
+// 跳转是控制信息：跟拖进度条一样操作房间（所有人一起跳）。本机先跳一下立刻响应，不等回声。
+function seekBy(ms) {
+  if (!canControlRoom()) return;
+  const target = clampPosition(video.currentTime * 1000 + ms);
+  hardSeek(target);
+  op('seek', { value: Math.round(target) });
+}
+
+// 按住 D/→：先等 0.2 秒。不到就是单击 → 松手时前进 5 秒；超过 → 临时 2 倍速，松手恢复房间倍速。
+function startHoldScan(key) {
+  if (S.holdKey || !canControlRoom()) return;
+  S.holdKey = key;
+  S.holdTimer = setTimeout(() => {
+    S.holdTimer = 0;
+    S.holdRate = HOLD_SCAN_RATE;
+    applyLocalRate();
+  }, HOLD_SCAN_MS);
+}
+
+function endHoldScan(key) {
+  if (S.holdKey !== key) return;   // 不是我们记下的那一次按键（比如在输入框里按的 D）
+  clearTimeout(S.holdTimer);
+  S.holdTimer = 0;
+  S.holdKey = null;
+  if (S.holdRate) {
+    S.holdRate = 0;                // 长按结束：回到房间倍速（房间没变速就是 1 倍）
+    applyLocalRate();
+  } else {
+    seekBy(SEEK_STEP_MS);          // 单击：前进 5 秒
+  }
+}
+
+// 按住时窗口失焦（切标签、Alt+Tab）收不到 keyup，这里兜底把临时倍速收回去
+function cancelHoldScan() {
+  if (!S.holdKey && !S.holdRate) return;
+  clearTimeout(S.holdTimer);
+  S.holdTimer = 0;
+  S.holdKey = null;
+  S.holdRate = 0;
+  applyLocalRate();
+}
+
+// 认这几个键，返回规范化后的小写名字；其它键返回 null，原样交给浏览器
+function shortcutKey(e) {
+  const k = e && e.key ? String(e.key).toLowerCase() : '';
+  if (k === 'f' || k === 'w' || k === 's' || k === 'a' || k === 'd') return k;
+  if (k === 'arrowup' || k === 'arrowdown' || k === 'arrowleft' || k === 'arrowright') return k;
+  return null;
+}
+
+function onShortcutDown(e) {
+  if (typingTarget(e.target)) return;
+  const k = shortcutKey(e);
+  if (!k) return;
+  if (e.preventDefault) e.preventDefault();   // 方向键别去滚页面、别去动焦点上的滑块
+  if (e.repeat) return;                       // 长按产生的自动重复不算新的一次按键
+  if (k === 'f') { toggleFullscreen(); return; }
+  if (k === 'w' || k === 'arrowup') { bumpVolume(1); return; }
+  if (k === 's' || k === 'arrowdown') { bumpVolume(-1); return; }
+  if (k === 'a' || k === 'arrowleft') { seekBy(-SEEK_STEP_MS); return; }
+  if (k === 'd' || k === 'arrowright') startHoldScan(k);
+}
+
+function onShortcutUp(e) {
+  const k = shortcutKey(e);
+  if (k === 'd' || k === 'arrowright') endHoldScan(k);
+}
+
 /* -------------------------------------------------------------- 事件绑定 */
 
 function bind() {
@@ -798,6 +929,10 @@ function bind() {
     stack.addEventListener('mouseleave', pokeControls);
   }
   document.addEventListener('keydown', pokeControls, { passive: true });
+  // 快捷键统一在窗口捕获阶段处理（输入框/滑块里的按键由 typingTarget() 放行）
+  window.addEventListener('keydown', onShortcutDown, { capture: true });
+  window.addEventListener('keyup', onShortcutUp, { capture: true });
+  window.addEventListener('blur', cancelHoldScan);   // 切走窗口时兜底：别把 2 倍速留在那儿
   video.addEventListener('play', pokeControls);   // 暂停时留着控制条，恢复播放后重新计时
 
   // 控制条显示方式：浮层 <-> 停靠常显（后者是浮层画不出来时的兜底），选择记在 localStorage
@@ -822,7 +957,7 @@ function bind() {
   $('autoTrimChk').addEventListener('change', () => {
     S.autoTrim = $('autoTrimChk').checked;
     // 关掉时立刻恢复房间倍速，避免停在 0.96×/1.04×
-    if (!S.autoTrim && S.state) video.playbackRate = S.state.rate;
+    if (!S.autoTrim) applyLocalRate();
   });
 
   $('hashBtn').addEventListener('click', startHash);

@@ -103,6 +103,11 @@ cargo build --release              # 产物：target/release/sync_video_player
 - **拿错文件会被拦下。** 哈希不一致的话服务器返回 409 `hash_mismatch`，页面会锁住播放并同时列出双方哈希，
   方便你确认是谁的文件不对。同一个房间的媒体以第一个设定者为准。
 - **音量各管各的。** 音量、静音、全屏、本地自动微调都不会同步，也不会发给别人。
+- **键盘快捷键。** `F` 全屏 / 退出全屏；`W` / `S`（或 `↑` / `↓`）音量 ±10%，音量 ≤10% 时
+  改成每次 ±2% 好微调；`A` / `D`（或 `←` / `→`）后退 / 前进 5 秒；按住 `D` / `→` 超过
+  0.2 秒进入 2 倍速快进，松开回到原速。跳转跟拖进度条一样会同步给房间里所有人
+  （跟播放/暂停一样属于控制信息）；音量、静音和按住快进只在本机生效，一个字节都不发出去。
+  在输入框里打字时快捷键自动让位。
 - **控制条叠在画面底部（默认「浮层」）。** 进度条、倍速、音量浮在画面下沿：不占位置、
   画面尺寸和位置完全不动，鼠标一动就浮现，静止约 2.6 秒淡出，暂停时一直留着。
   点「⛶ 全屏」画面铺满屏幕，按 Esc 退出。
@@ -206,6 +211,7 @@ cargo test                              # 71 项：58 个单元测试 + 13 个�
 cargo test --manifest-path wasm/Cargo.toml  # 20 项：浏览器里那套 C ABI + 共用源码的摘要测试
 node scripts/check-ui.mjs               # 前端 DOM 接线（id/class 是否存在、是否重复）
 node scripts/check-sync-policy.mjs      # 用 DOM 桩跑真实 app.js：验证「只在收到新控制信息时对齐」
+node scripts/check-shortcuts.mjs        # 用 DOM 桩跑真实 app.js：验证键盘快捷键（音量/跳转/长按快进）
 node scripts/check-wasm.mjs             # wasm 哈希器 vs Node crypto vs CLI（需要先构建主程序）
 bash scripts/smoke.sh                   # 45 项端到端检查：真实起服务走完整流程
 ```

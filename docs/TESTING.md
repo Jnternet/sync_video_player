@@ -8,7 +8,7 @@
 | 单元测试 | `src/*.rs` 里的 `#[cfg(test)]` | SHA-256 向量、抽样规范、HTTP 解析、房间状态机、命令行解析 | 无（不开端口） |
 | 集成测试 | `tests/e2e.rs` | 真的启动编译出来的服务，走 HTTP / SSE / CLI 全链路 | 能监听 `127.0.0.1` |
 | wasm 测试 | `wasm/src/lib.rs` 的 `#[cfg(test)]` | 浏览器用的 C ABI 全流程、抽样计划、与主程序摘要一致 | 无（本机跑，不需要 wasm 目标） |
-| 前端检查 | `scripts/check-ui.mjs`、`scripts/check-sync-policy.mjs`、`scripts/check-fullscreen.mjs`、`scripts/check-wasm.mjs` | DOM 接线、同步策略、全屏控制条浮现/淡出（后两者都用 DOM 桩跑真实 `app.js`）、wasm vs CLI vs Node crypto | node |
+| 前端检查 | `scripts/check-ui.mjs`、`scripts/check-sync-policy.mjs`、`scripts/check-fullscreen.mjs`、`scripts/check-shortcuts.mjs`、`scripts/check-wasm.mjs` | DOM 接线、同步策略、全屏控制条浮现/淡出、键盘快捷键（后三者都用 DOM 桩跑真实 `app.js`）、wasm vs CLI vs Node crypto | node |
 | 端到端冒烟 | `scripts/smoke.sh` | 46 项真实服务检查（静态资源、房间控制、缓冲等待、SSE、路径哈希…） | curl、jq、node |
 
 ## 一条命令跑完
@@ -112,6 +112,12 @@ ABI 版本号、`alloc/free`、空输入与 `abc` 的向量值、`null`/0 长度
   静止 2.6 秒淡出 → 鼠标停在控制条上或正拖进度条时不淡出 → 暂停时一直留着、续播后重新计时 →
   退出全屏摘掉 `.is-fs`，窗口模式下同样是这一套」，外加状态胶囊文案与「默认滑出、顶栏可切
   浮层、切回滑出」。
+- `check-shortcuts.mjs`：同样加载真实的 `web/app.js`，断言快捷键：`F` 全屏的是 `.stage`、
+  `W` / `S` / `↑` / `↓` 音量 ±10%（音量 ≤10% 时 ±2%，到 0/100 停住，且一个请求都不发）、
+  `A` / `D` / `←` / `→` 后退/前进 5 秒且**跟拖进度条一样把 `seek` 发给房间**、
+  按住 `D` / `→` 不到 0.2 秒算单击（+5 秒）、超过 0.2 秒进 2 倍速且松开回到**房间倍速**
+  （房间 1 倍速时就是 1 倍）、按住时窗口失焦也能收回倍速、长按快进全程不发请求；
+  另外还卡住「输入框里打字不吃快捷键」「自动重复不算新按键」「哈希没对上房间时方向键不许跳」。
 - `check-wasm.mjs`：同一个文件分别用 Node `crypto`、wasm 模块、`sync_video_player hash` 算摘要，
   整文件与抽样两种模式都必须三方一致。
 

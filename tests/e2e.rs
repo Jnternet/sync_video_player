@@ -384,6 +384,17 @@ fn http_layer_edges() {
     assert_eq!(get(s.port, "/nope").status, 404);
     assert_eq!(request(s.port, "DELETE", "/api/hello", b"").status, 404);
 
+    // 硬规则：视频字节不出本机 —— 接收文件字节的上传接口是被删掉的，不是没启用
+    for old in ["begin", "chunk", "sample", "finish", "cancel"] {
+        let resp = request(
+            s.port,
+            "POST",
+            &format!("/api/hash/{old}"),
+            br#"{"probe":1}"#,
+        );
+        assert_eq!(resp.status, 404, "旧上传接口 /api/hash/{old} 必须已移除");
+    }
+
     let bad = request(s.port, "POST", "/api/control", "{这不是 json".as_bytes());
     assert_eq!(bad.status, 400);
     assert_eq!(bad.json()["error"], json!("bad_json"));

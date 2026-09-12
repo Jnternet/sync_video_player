@@ -1,0 +1,29 @@
+[package]
+name = "rtest"
+version = "0.1.0"
+edition = "2021"
+description = "局域网同步播放器：Rust 单文件后端 + 浏览器前端，只同步控制信息"
+
+[[bin]]
+name = "rtest"
+path = "src/main.rs"
+
+[dependencies]
+tokio = { version = "1.53", features = [
+    "rt-multi-thread",
+    "net",
+    "io-util",
+    "sync",
+    "time",
+    "macros",
+    "signal",
+] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
+strip = true
+

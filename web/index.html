@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>rtest · 同步播放</title>
+<link rel="stylesheet" href="/app.css">
+</head>
+<body>
+<header>
+  <div class="brand">
+    <span class="logo">rtest</span>
+    <span class="sub">局域网同步播放 · 只同步控制信息</span>
+  </div>
+  <div class="header-right">
+    <span class="pill" id="connPill" data-state="off">连接中…</span>
+    <span class="pill" id="roomPill">房间 <code id="roomCode">main</code></span>
+    <button class="ghost" id="copyLinkBtn">复制邀请链接</button>
+  </div>
+</header>
+
+<main>
+  <section class="stage">
+    <div class="video-wrap">
+      <video id="video" playsinline preload="metadata"></video>
+
+      <div class="overlay" id="gateOverlay">
+        <div class="overlay-inner">
+          <h2 id="gateTitle">先选择你的本地视频文件</h2>
+          <p id="gateText">视频永远不会上传或下载；网络里只有哈希与控制信息。</p>
+          <label class="file-drop" id="dropZone">
+            <input type="file" id="fileInput" accept="video/*,.mkv,.mp4,.webm,.mov,.avi,.ts,.m2ts">
+            <span>点击选择文件，或把视频拖到这里</span>
+          </label>
+          <div class="gate-hashes" id="gateHashes"></div>
+          <div class="gate-actions" id="gateActions"></div>
+        </div>
+      </div>
+
+      <div class="overlay hidden" id="gestureOverlay">
+        <button class="big-play" id="gestureBtn">▶ 点击开始播放</button>
+        <p class="tiny">浏览器要求一次点击才允许自动播放</p>
+      </div>
+    </div>
+
+    <div class="controls">
+      <button id="playBtn" class="primary">▶ 播放</button>
+      <button id="pauseBtn">⏸ 暂停</button>
+      <button id="startBtn" title="跳回 0 秒">⏮ 开头</button>
+      <span class="time" id="timeLabel">00:00 / 00:00</span>
+      <input type="range" id="seek" min="0" max="1000" value="0" step="1" title="拖动后松手即同步跳转">
+      <select id="rateSel" title="倍速（会同步）">
+        <option value="0.5">0.5×</option>
+        <option value="0.75">0.75×</option>
+        <option value="1" selected>1×</option>
+        <option value="1.25">1.25×</option>
+        <option value="1.5">1.5×</option>
+        <option value="2">2×</option>
+      </select>
+      <button id="syncBtn" title="立即对齐到房间进度">⟲ 对齐</button>
+      <button id="fsBtn" title="全屏">⛶</button>
+    </div>
+
+    <div class="local-bar">
+      <label>🔊 音量 <input type="range" id="vol" min="0" max="100" value="100"></label>
+      <label class="check"><input type="checkbox" id="muteChk"> 静音</label>
+      <label class="check" title="可选：开启后只用变速在本机慢慢磨平偏差（不跳转、不联网）。默认关闭。">
+        <input type="checkbox" id="autoTrimChk"> 本地自动微调
+      </label>
+      <span class="note">音量与静音只在本机生效，不同步</span>
+      <span class="spacer"></span>
+      <span class="metric">时钟偏差 <b id="offsetVal">—</b></span>
+      <span class="metric">本地偏差 <b id="driftVal">—</b></span>
+    </div>
+  </section>
+
+  <aside>
+    <div class="card">
+      <h3>1 · 本机文件</h3>
+      <div class="file-line" id="fileLine">未选择</div>
+      <div class="kv"><span>大小</span><b id="fileSize">—</b></div>
+      <div class="kv"><span>时长</span><b id="fileDur">—</b></div>
+      <div class="hr"></div>
+      <div class="tabs">
+        <button class="tab active" data-tab="local">本机计算哈希</button>
+        <button class="tab" data-tab="manual">手动填哈希</button>
+      </div>
+
+      <div class="pane" id="pane-local">
+        <label class="field">哈希强度
+          <select id="hashMode">
+            <option value="full">完整 SHA-256（推荐，权威）</option>
+            <option value="sample">抽样指纹（只读约 3 MB，超大文件用）</option>
+          </select>
+        </label>
+        <div class="row">
+          <button id="hashBtn" class="primary">在本机计算并加入房间</button>
+          <button id="hashCancelBtn" class="ghost hidden">取消</button>
+        </div>
+        <div class="progress"><div class="bar" id="hashBar"></div></div>
+        <div class="msg" id="hashMsg"></div>
+        <p class="note">哈希由 <b>Rust 编译成的 WebAssembly</b> 在你本机计算，文件字节不离开这台设备，也不经过网络。</p>
+      </div>
+
+      <div class="pane hidden" id="pane-manual">
+        <p class="note">在任意机器上运行 <code>rtest hash "文件路径" --json</code>，把输出粘贴到这里。此模式不传输任何文件字节，但需要你自己保证文件一致。</p>
+        <textarea id="manualInput" rows="3" placeholder='{"name":"movie.mkv","size":123456,"mode":"full","hash":"…"}'></textarea>
+        <button id="manualBtn" class="primary">用这个哈希加入房间</button>
+        <div class="msg" id="manualMsg"></div>
+      </div>
+
+      <details class="advanced">
+        <summary>高级：服务器本机路径哈希（仅本机可用）</summary>
+        <p class="note">如果视频就在服务器这台机器上，可以让服务器上的 Rust 直接读磁盘算哈希。需要先在上面选中同一个文件用于播放。</p>
+        <input type="text" id="pathInput" placeholder="/home/me/movie.mkv 或 D:\movie.mkv">
+        <button id="pathBtn">用路径计算哈希</button>
+        <div class="msg" id="pathMsg"></div>
+      </details>
+    </div>
+
+    <div class="card">
+      <h3>2 · 房间媒体</h3>
+      <div class="kv"><span>文件</span><b id="roomMediaName">—</b></div>
+      <div class="kv"><span>大小</span><b id="roomMediaSize">—</b></div>
+      <div class="kv"><span>SHA-256</span><b class="mono" id="roomMediaHash">—</b></div>
+      <div class="kv"><span>模式</span><b id="roomMediaMode">—</b></div>
+      <div class="kv"><span>状态</span><b id="roomMediaState">—</b></div>
+      <label class="check"><input type="checkbox" id="waitBuf" checked> 缓冲自动等待（有人卡住就全场暂停）</label>
+      <button id="resetBtn" class="danger">重置房间媒体</button>
+    </div>
+
+    <div class="card">
+      <h3>3 · 参与者</h3>
+      <ul class="clients" id="clients"></ul>
+    </div>
+
+    <div class="card">
+      <h3>说明</h3>
+      <ul class="notes">
+        <li>同步的是<b>控制信息</b>：文件哈希、大小、播放/暂停、时间戳、倍速。</li>
+        <li>哈希由 <b>Rust(WASM)</b> 在各自本机计算；文件字节永远不出本机。</li>
+        <li>每个用户播放<b>自己磁盘上的文件</b>（blob: 本地播放），视频流量为 0。</li>
+        <li>平时各自按本机时钟播放，<b>不会为了追平偏差而主动跳转或变速</b>。</li>
+        <li>只有当有人触发播放/暂停/跳转/倍速（即产生新的控制信息）时，才会对齐一次。</li>
+        <li>需要时可用「⟲ 对齐」手动拉平；也可以打开「本地自动微调」用变速慢慢磨平。</li>
+      </ul>
+    </div>
+  </aside>
+</main>
+
+<script src="/app.js"></script>
+</body>
+</html>

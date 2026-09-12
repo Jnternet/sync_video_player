@@ -1,0 +1,25 @@
+# 浏览器内运行的 Rust 哈希器（独立 crate，编译目标 wasm32-unknown-unknown）
+# 构建：bash scripts/build-wasm.sh   （产物会复制到 web/rtest_hash.wasm）
+[package]
+name = "rtest-hash-wasm"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[lib]
+name = "rtest_hash_wasm"
+crate-type = ["cdylib"]
+path = "src/lib.rs"
+
+[dependencies]
+# 故意不引任何依赖：这个模块只做 SHA-256，产物越小越好
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true
+
+[workspace]
+

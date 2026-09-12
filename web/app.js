@@ -12,7 +12,7 @@
 const $ = (id) => document.getElementById(id);
 const video = $('video');
 // 界面版本标记：加 ?debug=1 会显示出来，用来确认浏览器里跑的到底是哪一版前端
-const UI_REV = 'v0.1.1';
+const UI_REV = 'v0.2.0';
 
 const fmtTime = (ms) => {
   if (!isFinite(ms) || ms < 0) ms = 0;

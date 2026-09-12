@@ -214,7 +214,7 @@ node scripts/check-ui.mjs               # 前端 DOM 接线（id/class 是否存
 node scripts/check-sync-policy.mjs      # 用 DOM 桩跑真实 app.js：验证「只在收到新控制信息时对齐」
 node scripts/check-shortcuts.mjs        # 用 DOM 桩跑真实 app.js：验证键盘快捷键（音量/跳转/长按快进）
 node scripts/check-wasm.mjs             # wasm 哈希器 vs Node crypto vs CLI（需要先构建主程序）
-bash scripts/smoke.sh                   # 45 项端到端检查：真实起服务走完整流程
+bash scripts/smoke.sh                   # 46 项端到端检查：真实起服务走完整流程
 ```
 
 `tests/e2e.rs` 不 mock 服务端：每个用例真的启动编译出来的二进制，用标准库自己发 HTTP/SSE 请求，
